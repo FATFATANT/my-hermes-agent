@@ -1078,6 +1078,7 @@ def _launch_tui(
 
 def cmd_chat(args):
     """Run interactive chat CLI."""
+    # getattr(args, "tui", False)，第三个参数是取不到时的默认值
     use_tui = getattr(args, "tui", False) or os.environ.get("HERMES_TUI") == "1"
 
     # Resolve --continue into --resume with the latest session or by name
@@ -7693,6 +7694,7 @@ For more help on a command:
         help="With --tui: run TypeScript sources via tsx (skip dist build)",
     )
 
+    # 主parser结束，给parser加上一个subparser列表，后续往里面逐个添加subparser
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # =========================================================================
@@ -10058,6 +10060,7 @@ Examples:
         ]:
             if not hasattr(args, attr):
                 setattr(args, attr, default)
+        # 如果是直接执行python -m hermes_cli.main，一般就是进这个方法
         cmd_chat(args)
         return
 

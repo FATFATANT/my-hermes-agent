@@ -1790,7 +1790,10 @@ def _get_plugin_cmd_handler_names() -> set:
 
 
 def _parse_skills_argument(skills: str | list[str] | tuple[str, ...] | None) -> list[str]:
-    """Normalize a CLI skills flag into a deduplicated list of skill identifiers."""
+    """
+    Normalize a CLI skills flag into a deduplicated list of skill identifiers.
+    把用户传入的 skills 参数统一整理成一个去重后的列表
+    """
     if not skills:
         return []
 
@@ -2150,6 +2153,7 @@ class HermesCLI:
             self.session_id = f"{timestamp_str}_{short_uuid}"
         
         # History file for persistent input recall across sessions
+        # / 不是数学除法，而是 pathlib.Path 重载过的路径拼接运算符
         self._history_file = _hermes_home / ".hermes_history"
         self._last_invalidate: float = 0.0  # throttle UI repaints
         self._app = None
@@ -9152,10 +9156,12 @@ class HermesCLI:
         # space stays above, not below.  This prints enough blank lines to
         # scroll the cursor to the last row before any content is rendered.
         try:
+            # 获取当前终端高度，也就是有多少行。
             _term_lines = shutil.get_terminal_size().lines
             if _term_lines > 2:
                 print("\n" * (_term_lines - 1), end="", flush=True)
         except Exception:
+            # 注意，这种异常处理方式，表示忽略异常继续执行后续代码
             pass
 
         self.show_banner()

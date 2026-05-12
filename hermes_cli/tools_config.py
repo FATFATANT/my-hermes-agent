@@ -625,7 +625,10 @@ def _get_platform_tools(
     *,
     include_default_mcp_servers: bool = True,
 ) -> Set[str]:
-    """Resolve which individual toolset names are enabled for a platform."""
+    """
+    Resolve which individual toolset names are enabled for a platform.
+    读取 config.yaml，结合平台默认值、用户显式配置、插件、MCP、平台限制，算出当前平台到底允许模型使用哪些工具集
+    """
     from toolsets import resolve_toolset, TOOLSETS
 
     platform_toolsets = config.get("platform_toolsets") or {}

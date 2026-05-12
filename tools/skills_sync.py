@@ -176,7 +176,7 @@ def _dir_hash(directory: Path) -> str:
 def sync_skills(quiet: bool = False) -> dict:
     """
     Sync bundled skills into ~/.hermes/skills/ using the manifest.
-
+    把仓库自带 skills 带到 ~/.hermes/skills/，新技能自动安装，未修改的技能自动更新，用户修改过或删除过的技能不会被强行覆盖。
     Returns:
         dict with keys: copied (list), updated (list), skipped (int),
                         user_modified (list), cleaned (list), total_bundled (int)

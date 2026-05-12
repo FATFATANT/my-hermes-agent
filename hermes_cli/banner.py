@@ -311,7 +311,10 @@ _update_check_done = threading.Event()
 
 
 def prefetch_update_check():
-    """Kick off update check in a background daemon thread."""
+    """
+    Kick off update check in a background daemon thread.
+    检查更新用，异步起线程执行
+    """
     def _run():
         global _update_result
         _update_result = check_for_updates()

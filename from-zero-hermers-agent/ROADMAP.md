@@ -13,11 +13,13 @@ below is designed so each step has a small, testable result.
 
 ## Phase 1: Real Model Loop
 
-- Add OpenAI-compatible chat completions client
-- Add provider config from env/config file
-- Add message history
-- Add tool-call parsing and dispatch
-- Add max-iteration budget
+- [x] Add OpenAI-compatible chat completions client
+- [x] Add provider config from env/config file
+- [x] Add message history
+- [x] Add tool-call parsing and dispatch
+- [x] Add max-iteration budget
+- [ ] Add streaming responses
+- [ ] Add multi-turn persisted history
 
 Reference in parent project:
 

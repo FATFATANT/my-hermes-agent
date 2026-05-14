@@ -10,11 +10,14 @@ import yaml
 
 @dataclass(frozen=True)
 class Config:
-    """Small config object for the first milestone."""
+    """Runtime config for the learning agent."""
 
     home: Path
     model: str = "local/echo"
+    base_url: str = "https://api.openai.com/v1"
+    api_key: str = ""
     max_iterations: int = 8
+    system_prompt: str = "You are Hermers, a small learning agent."
 
 
 def get_hermers_home() -> Path:
@@ -38,5 +41,8 @@ def load_config() -> Config:
     return Config(
         home=home,
         model=str(raw.get("model", "local/echo")),
+        base_url=str(raw.get("base_url", os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))),
+        api_key=str(raw.get("api_key", os.environ.get("OPENAI_API_KEY", ""))),
         max_iterations=int(raw.get("max_iterations", 8)),
+        system_prompt=str(raw.get("system_prompt", "You are Hermers, a small learning agent.")),
     )

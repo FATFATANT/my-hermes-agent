@@ -15,6 +15,12 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     chat = subparsers.add_parser("chat", help="Send one message to the agent")
+    """
+    nargs="+"   # 一个或多个
+    nargs="*"   # 零个或多个
+    nargs="?"   # 零个或一个
+    nargs=2    
+    """
     chat.add_argument("message", nargs="+", help="Message text")
 
     subparsers.add_parser("tools", help="List registered tools")

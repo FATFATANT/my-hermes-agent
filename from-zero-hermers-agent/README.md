@@ -35,10 +35,34 @@ python -m hermers_agent.cli chat "hello"
 
 ## Current Scope
 
-Milestone 0 is a local echo agent with a registry-backed tool system. It does
-not call an LLM yet. That is deliberate: we first want the control flow to be
-obvious before adding provider adapters, streaming, persistence, gateway
-platforms, and the dashboard.
+Milestone 1 includes a real OpenAI-compatible chat loop while keeping
+`local/echo` as the default offline mode.
+
+To use a real model, create `~/.hermers/config.yaml`:
+
+```yaml
+model: gpt-4.1-mini
+base_url: https://api.openai.com/v1
+api_key: sk-...
+max_iterations: 8
+```
+
+Or use environment variables:
+
+```bash
+export OPENAI_API_KEY=sk-...
+export OPENAI_BASE_URL=https://api.openai.com/v1
+hermers chat "Use the echo tool with text hello"
+```
+
+The loop now supports:
+
+- OpenAI-compatible `/chat/completions`
+- message history for one turn
+- function-tool schemas
+- assistant tool calls
+- tool result messages
+- max-iteration stopping
 
 ## Naming Note
 

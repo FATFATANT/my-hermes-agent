@@ -1,0 +1,2 @@
+[console_scripts]
+hermers = hermers_agent.cli:main

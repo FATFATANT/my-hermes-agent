@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: from-zero-hermers-agent
+Version: 0.0.1
+Summary: Incremental from-scratch learning implementation of Hermes Agent
+Requires-Python: >=3.11
+Requires-Dist: pyyaml<7,>=6.0.2
+Provides-Extra: dev
+Requires-Dist: pytest<10,>=8; extra == "dev"

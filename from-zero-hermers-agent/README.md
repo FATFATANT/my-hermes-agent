@@ -24,6 +24,7 @@ uv pip install -e ".[dev]"
 hermers --help
 hermers chat "hello"
 hermers tools
+hermers sessions
 pytest
 ```
 
@@ -63,6 +64,26 @@ The loop now supports:
 - assistant tool calls
 - tool result messages
 - max-iteration stopping
+- SQLite-backed session history
+
+Each `chat` command saves a session and prints its id:
+
+```bash
+hermers chat "hello"
+# [session: ...]
+```
+
+Resume a session with:
+
+```bash
+hermers chat --session <session-id> "continue from there"
+```
+
+List recent sessions:
+
+```bash
+hermers sessions
+```
 
 ## Naming Note
 

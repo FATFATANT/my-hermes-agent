@@ -19,6 +19,10 @@ class Config:
     max_iterations: int = 8
     system_prompt: str = "You are Hermers, a small learning agent."
 
+    @property
+    def database_path(self) -> Path:
+        return self.home / "sessions.sqlite3"
+
 
 def get_hermers_home() -> Path:
     """Return the profile-safe home directory for this learning project."""

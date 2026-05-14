@@ -35,14 +35,18 @@ class Agent:
             api_key=config.api_key,
         )
 
-    def chat(self, message: str) -> str:
-        return self.run_conversation(message).final_response
+    def chat(self, message: str, history: list[Message] | None = None) -> str:
+        return self.run_conversation(message, history=history).final_response
 
-    def run_conversation(self, user_message: str) -> ChatResult:
-        messages: list[Message] = [
-            {"role": "system", "content": self.config.system_prompt},
-            {"role": "user", "content": user_message},
-        ]
+    def run_conversation(
+        self,
+        user_message: str,
+        history: list[Message] | None = None,
+    ) -> ChatResult:
+        messages: list[Message] = list(history or [])
+        if not messages:
+            messages.append({"role": "system", "content": self.config.system_prompt})
+        messages.append({"role": "user", "content": user_message})
         if self.config.model == "local/echo":
             response = self._call_local_model(user_message)
             messages.append({"role": "assistant", "content": response})

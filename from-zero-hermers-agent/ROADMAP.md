@@ -19,7 +19,7 @@ below is designed so each step has a small, testable result.
 - [x] Add tool-call parsing and dispatch
 - [x] Add max-iteration budget
 - [ ] Add streaming responses
-- [ ] Add multi-turn persisted history
+- [x] Add multi-turn persisted history
 
 Reference in parent project:
 
@@ -30,8 +30,8 @@ Reference in parent project:
 
 ## Phase 2: Sessions and State
 
-- SQLite session store
-- Save and resume conversations
+- [x] SQLite session store
+- [x] Save and resume conversations
 - Session search
 - Basic logging
 

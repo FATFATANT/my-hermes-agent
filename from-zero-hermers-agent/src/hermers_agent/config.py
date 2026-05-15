@@ -23,6 +23,10 @@ class Config:
     def database_path(self) -> Path:
         return self.home / "sessions.sqlite3"
 
+    @property
+    def log_path(self) -> Path:
+        return self.home / "logs" / "agent.log"
+
 
 def get_hermers_home() -> Path:
     """Return the profile-safe home directory for this learning project."""

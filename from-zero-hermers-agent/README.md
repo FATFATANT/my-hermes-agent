@@ -25,6 +25,8 @@ hermers --help
 hermers chat "hello"
 hermers tools
 hermers sessions
+hermers search hello
+hermers logs
 pytest
 ```
 
@@ -83,6 +85,18 @@ List recent sessions:
 
 ```bash
 hermers sessions
+```
+
+Search saved sessions:
+
+```bash
+hermers search "hello"
+```
+
+Show the log file path:
+
+```bash
+hermers logs
 ```
 
 ## Naming Note

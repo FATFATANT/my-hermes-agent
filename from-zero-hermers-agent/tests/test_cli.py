@@ -21,3 +21,25 @@ def test_cli_lists_sessions(tmp_path, monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "hello" in output
     assert "messages" in output
+
+
+def test_cli_searches_sessions(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HERMERS_HOME", str(tmp_path))
+    main(["chat", "searchable", "phrase"])
+    capsys.readouterr()
+
+    assert main(["search", "searchable"]) == 0
+
+    output = capsys.readouterr().out
+    assert "searchable phrase" in output
+
+
+def test_cli_writes_log_file(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HERMERS_HOME", str(tmp_path))
+
+    assert main(["chat", "hello"]) == 0
+    capsys.readouterr()
+
+    log_path = tmp_path / "logs" / "agent.log"
+    assert log_path.exists()
+    assert "chat command completed" in log_path.read_text()

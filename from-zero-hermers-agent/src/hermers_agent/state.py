@@ -21,6 +21,7 @@ class SessionSummary:
     title: str
     updated_at: str
     message_count: int
+    preview: str = ""
 
 
 class SessionStore:
@@ -110,6 +111,40 @@ class SessionStore:
                 title=str(row[1]),
                 updated_at=str(row[2]),
                 message_count=int(row[3]),
+            )
+            for row in rows
+        ]
+
+    def search_sessions(self, query: str, limit: int = 10) -> list[SessionSummary]:
+        pattern = f"%{query}%"
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    s.id,
+                    s.title,
+                    s.updated_at,
+                    COUNT(m_all.id) AS message_count,
+                    COALESCE(MIN(m_match.content), '') AS preview
+                FROM sessions s
+                LEFT JOIN messages m_all ON m_all.session_id = s.id
+                LEFT JOIN messages m_match
+                    ON m_match.session_id = s.id
+                    AND m_match.content LIKE ?
+                WHERE s.title LIKE ? OR m_match.id IS NOT NULL
+                GROUP BY s.id
+                ORDER BY s.updated_at DESC
+                LIMIT ?
+                """,
+                (pattern, pattern, limit),
+            ).fetchall()
+        return [
+            SessionSummary(
+                id=str(row[0]),
+                title=str(row[1]),
+                updated_at=str(row[2]),
+                message_count=int(row[3]),
+                preview=str(row[4]),
             )
             for row in rows
         ]

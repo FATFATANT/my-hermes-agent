@@ -32,8 +32,8 @@ Reference in parent project:
 
 - [x] SQLite session store
 - [x] Save and resume conversations
-- Session search
-- Basic logging
+- [x] Session search
+- [x] Basic logging
 
 Reference in parent project:
 

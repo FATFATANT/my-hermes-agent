@@ -124,19 +124,31 @@ class SessionStore:
                     s.id,
                     s.title,
                     s.updated_at,
-                    COUNT(m_all.id) AS message_count,
-                    COALESCE(MIN(m_match.content), '') AS preview
+                    (
+                        SELECT COUNT(*)
+                        FROM messages m_count
+                        WHERE m_count.session_id = s.id
+                    ) AS message_count,
+                    COALESCE((
+                        SELECT m_preview.content
+                        FROM messages m_preview
+                        WHERE m_preview.session_id = s.id
+                            AND m_preview.content LIKE ?
+                        ORDER BY m_preview.position ASC
+                        LIMIT 1
+                    ), '') AS preview
                 FROM sessions s
-                LEFT JOIN messages m_all ON m_all.session_id = s.id
-                LEFT JOIN messages m_match
-                    ON m_match.session_id = s.id
-                    AND m_match.content LIKE ?
-                WHERE s.title LIKE ? OR m_match.id IS NOT NULL
-                GROUP BY s.id
+                WHERE s.title LIKE ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM messages m_match
+                        WHERE m_match.session_id = s.id
+                            AND m_match.content LIKE ?
+                    )
                 ORDER BY s.updated_at DESC
                 LIMIT ?
                 """,
-                (pattern, pattern, limit),
+                (pattern, pattern, pattern, limit),
             ).fetchall()
         return [
             SessionSummary(

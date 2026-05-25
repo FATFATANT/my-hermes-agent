@@ -10,6 +10,11 @@ src/hermers_agent/__init__.py
 src/hermers_agent/agent.py
 src/hermers_agent/cli.py
 src/hermers_agent/config.py
+src/hermers_agent/llm.py
+src/hermers_agent/logging_config.py
+src/hermers_agent/state.py
 src/hermers_agent/tools/__init__.py
 src/hermers_agent/tools/registry.py
 tests/test_agent.py
+tests/test_cli.py
+tests/test_state.py

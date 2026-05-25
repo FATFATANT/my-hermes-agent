@@ -33,3 +33,23 @@ def test_session_store_searches_titles_and_messages(tmp_path):
     assert title_results[0].id == title_match
     assert body_results[0].id == body_match
     assert body_results[0].preview == "contains beta"
+
+
+def test_session_search_message_count_is_not_multiplied_by_matches(tmp_path):
+    store = SessionStore(tmp_path / "sessions.sqlite3")
+    session_id = store.create_session("searchable title")
+
+    store.append_messages(
+        session_id,
+        [
+            {"role": "user", "content": "searchable one"},
+            {"role": "assistant", "content": "searchable two"},
+            {"role": "user", "content": "ordinary"},
+        ],
+    )
+
+    results = store.search_sessions("searchable")
+
+    assert results[0].id == session_id
+    assert results[0].message_count == 3
+    assert results[0].preview == "searchable one"

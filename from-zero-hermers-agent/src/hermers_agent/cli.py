@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 
 from hermers_agent.agent import Agent
@@ -38,6 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
     search = subparsers.add_parser("search", help="Search saved sessions")
     search.add_argument("query", help="Text to search for")
     search.add_argument("--limit", type=int, default=10, help="Number of matches to show")
+
+    show = subparsers.add_parser("show", help="Show all messages in a session")
+    show.add_argument("session_id", help="Session id to inspect")
+    show.add_argument("--json", action="store_true", help="Print raw message JSON")
 
     subparsers.add_parser("logs", help="Show the agent log file path")
 
@@ -94,6 +99,22 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 0
 
+    if args.command == "show":
+        logger.info("show command session=%s json=%s", args.session_id, args.json)
+        messages = store.get_messages(args.session_id)
+        if args.json:
+            print(json.dumps(messages, indent=2, ensure_ascii=False))
+            return 0
+        if not messages:
+            print(f"No messages found for session: {args.session_id}")
+            return 0
+        for index, message in enumerate(messages, start=1):
+            role = str(message.get("role", "unknown"))
+            print(f"{index}. {role}")
+            print(_format_message_content(message))
+            print()
+        return 0
+
     if args.command == "logs":
         print(config.log_path)
         return 0
@@ -105,6 +126,15 @@ def main(argv: list[str] | None = None) -> int:
 def _title_from_message(parts: list[str]) -> str:
     title = " ".join(parts).strip()
     return title[:60] or "Untitled session"
+
+
+def _format_message_content(message: dict) -> str:
+    content = message.get("content")
+    if content not in (None, ""):
+        return str(content)
+    if message.get("tool_calls"):
+        return json.dumps(message["tool_calls"], indent=2, ensure_ascii=False)
+    return ""
 
 
 if __name__ == "__main__":

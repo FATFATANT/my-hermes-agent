@@ -26,6 +26,7 @@ hermers chat "hello"
 hermers tools
 hermers sessions
 hermers search hello
+hermers show <session-id>
 hermers logs
 pytest
 ```
@@ -91,6 +92,13 @@ Search saved sessions:
 
 ```bash
 hermers search "hello"
+```
+
+Show every message in a session:
+
+```bash
+hermers show <session-id>
+hermers show <session-id> --json
 ```
 
 Show the log file path:

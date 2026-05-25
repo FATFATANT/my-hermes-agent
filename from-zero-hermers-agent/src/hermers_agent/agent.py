@@ -47,6 +47,10 @@ class Agent:
         if not messages:
             messages.append({"role": "system", "content": self.config.system_prompt})
         messages.append({"role": "user", "content": user_message})
+        if user_message.startswith("/tool "):
+            response = self._run_tool_command(user_message.removeprefix("/tool ").strip())
+            messages.append({"role": "assistant", "content": response})
+            return ChatResult(final_response=response, messages=messages)
         if self.config.model == "local/echo":
             response = self._call_local_model(user_message)
             messages.append({"role": "assistant", "content": response})
@@ -94,7 +98,7 @@ class Agent:
         name, _, arg_text = command.partition(" ")
         if not name:
             return "Usage: /tool <name> [text]"
-        return self.tools.call(name, {"text": arg_text})
+        return self.tools.call(name, _parse_local_tool_args(arg_text))
 
     def _assistant_message(
         self,
@@ -118,3 +122,18 @@ class Agent:
                 for tool_call in tool_calls
             ]
         return message
+
+
+def _parse_local_tool_args(arg_text: str) -> dict[str, Any]:
+    arg_text = arg_text.strip()
+    if not arg_text:
+        return {}
+    if arg_text.startswith("{"):
+        try:
+            parsed = json.loads(arg_text)
+        except json.JSONDecodeError as exc:
+            return {"_raw": arg_text, "text": arg_text, "_error": str(exc)}
+        if isinstance(parsed, dict):
+            return parsed
+        return {"text": arg_text}
+    return {"text": arg_text}

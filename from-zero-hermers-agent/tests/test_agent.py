@@ -18,6 +18,14 @@ def test_agent_can_call_registered_tool(tmp_path):
     assert agent.chat("/tool echo hello") == "hello"
 
 
+def test_agent_local_tool_command_accepts_json_args(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "notes.txt").write_text("hello from file")
+    agent = Agent(Config(home=tmp_path))
+
+    assert agent.chat('/tool read_file {"path": "notes.txt"}') == "hello from file"
+
+
 class FakeClient:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -32,6 +40,16 @@ class FakeClient:
             }
         )
         return self.responses.pop(0)
+
+
+def test_explicit_tool_command_bypasses_remote_model(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "notes.txt").write_text("hello from file")
+    client = FakeClient([ModelResponse(content="should not be used", tool_calls=[])])
+    agent = Agent(Config(home=tmp_path, model="test/model"), client=client)
+
+    assert agent.chat('/tool read_file {"path": "notes.txt"}') == "hello from file"
+    assert client.calls == []
 
 
 def test_real_loop_returns_model_content(tmp_path):

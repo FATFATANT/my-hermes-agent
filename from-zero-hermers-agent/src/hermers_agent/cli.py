@@ -3,12 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from dataclasses import replace
 
 from hermers_agent.agent import Agent
-from hermers_agent.config import load_config
+from hermers_agent.config import Config, load_config
 from hermers_agent.logging_config import setup_logging
 from hermers_agent.state import SessionStore
-from hermers_agent.tools.registry import builtin_registry
+from hermers_agent.tools.registry import ToolRegistry, builtin_registry
 
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,17 @@ def build_parser() -> argparse.ArgumentParser:
     """
     chat.add_argument("message", nargs="+", help="Message text")
     chat.add_argument("--session", help="Resume an existing session id")
+    chat.add_argument("--model", help="Override the configured model for this turn")
+    chat.add_argument("--no-tools", action="store_true", help="Disable tools for this turn")
+    chat.add_argument("--toolset", action="append", help="Enable only this toolset; repeatable")
+    chat.add_argument("--disable-toolset", action="append", default=[], help="Disable a configured toolset")
 
-    subparsers.add_parser("tools", help="List registered tools")
+    tools = subparsers.add_parser("tools", help="List registered tools")
+    tools.add_argument("--json", action="store_true", help="Print tool schemas as JSON")
+    tools.add_argument("--toolset", action="append", help="Enable only this toolset; repeatable")
+    tools.add_argument("--disable-toolset", action="append", default=[], help="Disable a configured toolset")
+
+    subparsers.add_parser("config", help="Show resolved runtime config")
 
     sessions = subparsers.add_parser("sessions", help="List recent sessions")
     sessions.add_argument("--limit", type=int, default=10, help="Number of sessions to show")
@@ -55,12 +65,14 @@ def main(argv: list[str] | None = None) -> int:
 
     config = load_config()
     setup_logging(config.home)
-    registry = builtin_registry()
     store = SessionStore(config.database_path)
 
     if args.command == "chat":
         logger.info("chat command started session=%s", args.session or "<new>")
-        agent = Agent(config=config, tools=registry)
+        chat_config = replace(config, model=args.model) if args.model else config
+        enabled_toolsets = _resolve_toolsets(config, args)
+        tools = ToolRegistry() if args.no_tools else builtin_registry(enabled_toolsets)
+        agent = Agent(config=chat_config, tools=tools)
         history = store.get_messages(args.session) if args.session else []
         before_count = len(history)
         result = agent.run_conversation(" ".join(args.message), history=history)
@@ -76,8 +88,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "tools":
+        registry = builtin_registry(_resolve_toolsets(config, args))
+        if args.json:
+            print(json.dumps(registry.schemas(), indent=2, ensure_ascii=False))
+            return 0
         for tool in registry.list_tools():
-            print(f"{tool.name}\t{tool.description}")
+            status = "available" if tool.available else f"unavailable: {tool.unavailable_reason}"
+            print(f"{tool.name}\t{tool.toolset}\t{status}\t{tool.description}")
+        return 0
+
+    if args.command == "config":
+        logger.info("config command")
+        print(_format_config(config))
         return 0
 
     if args.command == "sessions":
@@ -135,6 +157,28 @@ def _format_message_content(message: dict) -> str:
     if message.get("tool_calls"):
         return json.dumps(message["tool_calls"], indent=2, ensure_ascii=False)
     return ""
+
+
+def _format_config(config: Config) -> str:
+    rows = [
+        ("home", str(config.home)),
+        ("database_path", str(config.database_path)),
+        ("log_path", str(config.log_path)),
+        ("model", config.model),
+        ("base_url", config.base_url),
+        ("api_key", "<set>" if config.api_key else "<missing>"),
+        ("max_iterations", str(config.max_iterations)),
+        ("system_prompt", config.system_prompt),
+        ("enabled_toolsets", ", ".join(config.enabled_toolsets)),
+    ]
+    return "\n".join(f"{key}: {value}" for key, value in rows)
+
+
+def _resolve_toolsets(config: Config, args: argparse.Namespace) -> set[str]:
+    toolsets = set(args.toolset or config.enabled_toolsets)
+    for disabled in args.disable_toolset:
+        toolsets.discard(disabled)
+    return toolsets
 
 
 if __name__ == "__main__":

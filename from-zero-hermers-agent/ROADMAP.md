@@ -46,8 +46,8 @@ Reference in parent project:
 
 - Rich output
 - Slash commands
-- Model selection
-- Tool configuration
+- [x] Model selection
+- [x] Tool configuration
 - Prompt history and autocomplete
 
 Reference in parent project:
@@ -58,11 +58,11 @@ Reference in parent project:
 
 ## Phase 4: Tool System
 
-- Toolsets
-- Requirement checks
-- Tool schemas
+- [x] Toolsets
+- [x] Requirement checks
+- [x] Tool schemas
 - Terminal tool
-- File/search tools
+- [x] File/search tools
 - Browser/MCP hooks later
 
 Reference in parent project:

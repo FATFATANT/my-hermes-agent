@@ -23,7 +23,13 @@ source .venv/bin/activate
 uv pip install -e ".[dev]"
 hermers --help
 hermers chat "hello"
+hermers chat --model local/echo "hello"
+hermers chat --no-tools "hello"
+hermers chat --toolset files "/tool read_file {\"path\":\"README.md\"}"
 hermers tools
+hermers tools --json
+hermers tools --disable-toolset files
+hermers config
 hermers sessions
 hermers search hello
 hermers show <session-id>
@@ -49,6 +55,9 @@ model: gpt-4.1-mini
 base_url: https://api.openai.com/v1
 api_key: sk-...
 max_iterations: 8
+enabled_toolsets:
+  - core
+  - files
 ```
 
 Or use environment variables:
@@ -82,6 +91,34 @@ Resume a session with:
 hermers chat --session <session-id> "continue from there"
 ```
 
+Override the model for one chat command:
+
+```bash
+hermers chat --model local/echo "hello"
+```
+
+Disable tools for one chat command:
+
+```bash
+hermers chat --no-tools "hello"
+```
+
+Limit tools for one chat command:
+
+```bash
+hermers chat --toolset files "/tool read_file {\"path\":\"README.md\"}"
+hermers chat --disable-toolset files "/tool echo hello"
+```
+
+Messages that start with `/tool ` execute the named local tool directly, even
+when the configured model is remote.
+
+Show the resolved runtime config:
+
+```bash
+hermers config
+```
+
 List recent sessions:
 
 ```bash
@@ -105,6 +142,21 @@ Show the log file path:
 
 ```bash
 hermers logs
+```
+
+Inspect tool schemas:
+
+```bash
+hermers tools
+hermers tools --json
+hermers tools --disable-toolset files
+```
+
+Built-in toolsets:
+
+```text
+core   echo
+files  read_file, search_files
 ```
 
 ## Naming Note

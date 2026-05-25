@@ -18,6 +18,7 @@ class Config:
     api_key: str = ""
     max_iterations: int = 8
     system_prompt: str = "You are Hermers, a small learning agent."
+    enabled_toolsets: tuple[str, ...] = ("core", "files")
 
     @property
     def database_path(self) -> Path:
@@ -53,4 +54,15 @@ def load_config() -> Config:
         api_key=str(raw.get("api_key", os.environ.get("OPENAI_API_KEY", ""))),
         max_iterations=int(raw.get("max_iterations", 8)),
         system_prompt=str(raw.get("system_prompt", "You are Hermers, a small learning agent.")),
+        enabled_toolsets=_load_toolsets(raw.get("enabled_toolsets")),
     )
+
+
+def _load_toolsets(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ("core", "files")
+    if isinstance(value, str):
+        return tuple(part.strip() for part in value.split(",") if part.strip())
+    if isinstance(value, list):
+        return tuple(str(part).strip() for part in value if str(part).strip())
+    return ("core", "files")

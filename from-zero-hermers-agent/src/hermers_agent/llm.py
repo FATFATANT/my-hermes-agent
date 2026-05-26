@@ -59,14 +59,14 @@ class OpenAICompatibleClient:
 
         body = {
             "model": model,
-            "messages": messages,
+            "messages": _sanitize_json_value(messages),
         }
         if tools:
-            body["tools"] = tools
+            body["tools"] = _sanitize_json_value(tools)
 
         request = urllib.request.Request(
             f"{self.base_url}/chat/completions",
-            data=json.dumps(body).encode("utf-8"),
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -107,3 +107,13 @@ def _parse_message(message: dict[str, Any]) -> ModelResponse:
         tool_calls=tool_calls,
         reasoning_content=message.get("reasoning_content") or "",
     )
+
+
+def _sanitize_json_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return "".join("\ufffd" if 0xD800 <= ord(char) <= 0xDFFF else char for char in value)
+    if isinstance(value, list):
+        return [_sanitize_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _sanitize_json_value(item) for key, item in value.items()}
+    return value

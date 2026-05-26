@@ -44,8 +44,8 @@ Reference in parent project:
 
 ## Phase 3: CLI Experience
 
-- Rich output
-- Slash commands
+- Basic formatted output
+- [x] Slash commands
 - [x] Model selection
 - [x] Tool configuration
 - Prompt history and autocomplete
@@ -61,7 +61,7 @@ Reference in parent project:
 - [x] Toolsets
 - [x] Requirement checks
 - [x] Tool schemas
-- Terminal tool
+- [x] Terminal tool
 - [x] File/search tools
 - Browser/MCP hooks later
 

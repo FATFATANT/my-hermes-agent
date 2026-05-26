@@ -18,7 +18,7 @@ class Config:
     api_key: str = ""
     max_iterations: int = 8
     system_prompt: str = "You are Hermers, a small learning agent."
-    enabled_toolsets: tuple[str, ...] = ("core", "files")
+    enabled_toolsets: tuple[str, ...] = ("core", "files", "terminal")
 
     @property
     def database_path(self) -> Path:
@@ -60,9 +60,9 @@ def load_config() -> Config:
 
 def _load_toolsets(value: Any) -> tuple[str, ...]:
     if value is None:
-        return ("core", "files")
+        return ("core", "files", "terminal")
     if isinstance(value, str):
         return tuple(part.strip() for part in value.split(",") if part.strip())
     if isinstance(value, list):
         return tuple(str(part).strip() for part in value if str(part).strip())
-    return ("core", "files")
+    return ("core", "files", "terminal")

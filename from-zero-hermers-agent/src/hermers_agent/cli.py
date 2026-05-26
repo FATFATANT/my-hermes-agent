@@ -29,7 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     nargs="?"   # 零个或一个
     nargs=2    
     """
-    chat.add_argument("message", nargs="+", help="Message text")
+    chat.add_argument("message", nargs="*", help="Message text")
+    chat.add_argument("-q", "--query", help="Single message text")
     chat.add_argument("--session", help="Resume an existing session id")
     chat.add_argument("--model", help="Override the configured model for this turn")
     chat.add_argument("--no-tools", action="store_true", help="Disable tools for this turn")
@@ -73,18 +74,12 @@ def main(argv: list[str] | None = None) -> int:
         enabled_toolsets = _resolve_toolsets(config, args)
         tools = ToolRegistry() if args.no_tools else builtin_registry(enabled_toolsets)
         agent = Agent(config=chat_config, tools=tools)
-        history = store.get_messages(args.session) if args.session else []
-        before_count = len(history)
-        result = agent.run_conversation(" ".join(args.message), history=history)
-        session_id = args.session or store.create_session(_title_from_message(args.message))
-        store.append_messages(session_id, result.messages[before_count:])
-        logger.info(
-            "chat command completed session=%s saved_messages=%s",
-            session_id,
-            len(result.messages) - before_count,
-        )
-        print(result.final_response)
-        print(f"[session: {session_id}]")
+        initial_message = args.query or " ".join(args.message).strip()
+        if initial_message:
+            session_id = _run_chat_turn(store, agent, args.session, initial_message)
+        else:
+            session_id = _run_chat_repl(store, agent, args.session)
+        logger.info("chat command completed session=%s", session_id)
         return 0
 
     if args.command == "tools":
@@ -148,6 +143,70 @@ def main(argv: list[str] | None = None) -> int:
 def _title_from_message(parts: list[str]) -> str:
     title = " ".join(parts).strip()
     return title[:60] or "Untitled session"
+
+
+def _run_chat_turn(
+    store: SessionStore,
+    agent: Agent,
+    session_id: str | None,
+    message: str,
+) -> str:
+    history = store.get_messages(session_id) if session_id else []
+    before_count = len(history)
+    result = agent.run_conversation(message, history=history)
+    active_session_id = session_id or store.create_session(_title_from_message([message]))
+    store.append_messages(active_session_id, result.messages[before_count:])
+    saved_count = len(result.messages) - before_count
+    logger.info("chat turn saved session=%s saved_messages=%s", active_session_id, saved_count)
+    print(result.final_response or "[empty response]")
+    print(f"[session: {active_session_id}]")
+    return active_session_id
+
+
+def _run_chat_repl(
+    store: SessionStore,
+    agent: Agent,
+    session_id: str | None,
+) -> str:
+    active_session_id = session_id
+    print("Hermers chat. Type /help for commands, /exit to quit.")
+    while True:
+        try:
+            message = input("hermers> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if not message:
+            continue
+        if message in {"/exit", "/quit"}:
+            break
+        if message == "/help":
+            _print_repl_help()
+            continue
+        if message == "/tools":
+            for tool in agent.tools.list_tools(include_unavailable=False):
+                print(f"{tool.name}\t{tool.toolset}\t{tool.description}")
+            continue
+        if message == "/session":
+            print(active_session_id or "[no session yet]")
+            continue
+        try:
+            active_session_id = _run_chat_turn(store, agent, active_session_id, message)
+        except RuntimeError as exc:
+            logger.exception("chat turn failed")
+            print(f"[error] {exc}")
+    if active_session_id:
+        print(f"[session: {active_session_id}]")
+    return active_session_id or ""
+
+
+def _print_repl_help() -> None:
+    print("Commands:")
+    print("  /help       Show this help")
+    print("  /tools      List enabled tools")
+    print("  /session    Show the current session id")
+    print("  /tool NAME JSON  Run a tool directly")
+    print("  /exit       Quit")
 
 
 def _format_message_content(message: dict) -> str:

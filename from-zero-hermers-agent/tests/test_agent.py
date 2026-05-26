@@ -26,6 +26,25 @@ def test_agent_local_tool_command_accepts_json_args(tmp_path, monkeypatch):
     assert agent.chat('/tool read_file {"path": "notes.txt"}') == "hello from file"
 
 
+def test_agent_can_run_terminal_tool(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    agent = Agent(Config(home=tmp_path))
+
+    output = agent.chat('/tool terminal {"command": "python --version"}')
+
+    assert "exit_code: 0" in output
+    assert "Python" in output
+
+
+def test_terminal_tool_rejects_shell_control_operators(tmp_path):
+    agent = Agent(Config(home=tmp_path))
+
+    assert (
+        agent.chat('/tool terminal {"command": "python --version && echo nope"}')
+        == "Refusing command with shell control operators."
+    )
+
+
 class FakeClient:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -82,3 +101,13 @@ def test_real_loop_executes_tool_calls(tmp_path):
     assert json.loads(tool_call_arguments) == {"text": "tool says hi"}
     assert second_call_messages[-1]["role"] == "tool"
     assert second_call_messages[-1]["content"] == "tool says hi"
+
+
+def test_real_loop_sanitizes_lone_surrogates_before_model_call(tmp_path):
+    client = FakeClient([ModelResponse(content="ok", tool_calls=[])])
+    agent = Agent(Config(home=tmp_path, model="test/model"), client=client)
+
+    assert agent.chat("bad \ud800 input") == "ok"
+
+    sent_content = client.calls[0]["messages"][-1]["content"]
+    assert sent_content == "bad \ufffd input"

@@ -1,4 +1,5 @@
-from hermers_agent.cli import main
+from hermers_agent.cli import _run_chat_turn, main
+from hermers_agent.agent import ChatResult
 
 
 def test_cli_chat_saves_session(tmp_path, monkeypatch, capsys):
@@ -41,6 +42,44 @@ def test_cli_chat_can_select_toolsets(tmp_path, monkeypatch, capsys):
     assert "hello from file" in output
 
 
+def test_cli_chat_accepts_query_flag(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HERMERS_HOME", str(tmp_path))
+
+    assert main(["chat", "-q", "hello from query"]) == 0
+
+    output = capsys.readouterr().out
+    assert "[local/echo] hello from query" in output
+
+
+def test_cli_chat_without_message_runs_repl(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HERMERS_HOME", str(tmp_path))
+    inputs = iter(["/tools", "/tool echo hello", "/session", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(inputs))
+
+    assert main(["chat"]) == 0
+
+    output = capsys.readouterr().out
+    assert "Hermers chat." in output
+    assert "echo\tcore" in output
+    assert "hello" in output
+    assert "[session:" in output
+
+
+def test_cli_chat_turn_shows_empty_response_placeholder(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HERMERS_HOME", str(tmp_path))
+
+    class EmptyAgent:
+        def run_conversation(self, message, history=None):
+            return ChatResult(final_response="", messages=[{"role": "assistant", "content": ""}])
+
+    from hermers_agent.state import SessionStore
+
+    _run_chat_turn(SessionStore(tmp_path / "sessions.sqlite3"), EmptyAgent(), None, "hello")
+
+    output = capsys.readouterr().out
+    assert "[empty response]" in output
+
+
 def test_cli_lists_tool_schemas_as_json(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HERMERS_HOME", str(tmp_path))
 
@@ -50,6 +89,7 @@ def test_cli_lists_tool_schemas_as_json(tmp_path, monkeypatch, capsys):
     assert '"type": "function"' in output
     assert '"name": "echo"' in output
     assert '"name": "read_file"' in output
+    assert '"name": "terminal"' in output
     assert '"required": [' in output
 
 
@@ -102,7 +142,7 @@ def test_cli_shows_resolved_config_without_secret(tmp_path, monkeypatch, capsys)
     assert "api_key: <set>" in output
     assert "secret-value" not in output
     assert "max_iterations: 3" in output
-    assert "enabled_toolsets: core, files" in output
+    assert "enabled_toolsets: core, files, terminal" in output
 
 
 def test_cli_shows_session_messages(tmp_path, monkeypatch, capsys):

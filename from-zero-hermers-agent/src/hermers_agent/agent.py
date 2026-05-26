@@ -43,9 +43,10 @@ class Agent:
         user_message: str,
         history: list[Message] | None = None,
     ) -> ChatResult:
-        messages: list[Message] = list(history or [])
+        user_message = _sanitize_text(user_message)
+        messages: list[Message] = _sanitize_messages(list(history or []))
         if not messages:
-            messages.append({"role": "system", "content": self.config.system_prompt})
+            messages.append({"role": "system", "content": _sanitize_text(self.config.system_prompt)})
         messages.append({"role": "user", "content": user_message})
         if user_message.startswith("/tool "):
             response = self._run_tool_command(user_message.removeprefix("/tool ").strip())
@@ -74,7 +75,7 @@ class Agent:
                 return ChatResult(final_response=response.content, messages=messages)
 
             for tool_call in response.tool_calls:
-                tool_result = self.tools.call(tool_call.name, tool_call.arguments)
+                tool_result = _sanitize_text(self.tools.call(tool_call.name, tool_call.arguments))
                 messages.append(
                     {
                         "role": "tool",
@@ -137,3 +138,22 @@ def _parse_local_tool_args(arg_text: str) -> dict[str, Any]:
             return parsed
         return {"text": arg_text}
     return {"text": arg_text}
+
+
+def _sanitize_messages(messages: list[Message]) -> list[Message]:
+    return [_sanitize_value(message) for message in messages]
+
+
+def _sanitize_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _sanitize_text(value)
+    if isinstance(value, list):
+        return [_sanitize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _sanitize_value(item) for key, item in value.items()}
+    return value
+
+
+def _sanitize_text(text: str) -> str:
+    # 替换无效字符为固定值
+    return "".join("\ufffd" if 0xD800 <= ord(char) <= 0xDFFF else char for char in text)

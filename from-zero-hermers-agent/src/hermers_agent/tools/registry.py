@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -78,7 +79,7 @@ class ToolRegistry:
 
 
 def builtin_registry(enabled_toolsets: set[str] | None = None) -> ToolRegistry:
-    enabled_toolsets = enabled_toolsets or {"core", "files"}
+    enabled_toolsets = enabled_toolsets or {"core", "files", "terminal"}
     registry = ToolRegistry()
     if "core" in enabled_toolsets:
         registry.register(
@@ -142,6 +143,27 @@ def builtin_registry(enabled_toolsets: set[str] | None = None) -> ToolRegistry:
                 "required": ["query"],
             },
         )
+    if "terminal" in enabled_toolsets:
+        registry.register(
+            name="terminal",
+            toolset="terminal",
+            description="Run a safe shell command in the current workspace.",
+            handler=terminal_tool,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Command to run. Dangerous shell operators are rejected.",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Maximum seconds to wait, capped at 30.",
+                    },
+                },
+                "required": ["command"],
+            },
+        )
     return registry
 
 
@@ -150,9 +172,9 @@ def read_file_tool(args: dict) -> str:
     if not path_value:
         return "Missing required argument: path"
 
-    path = Path(path_value).expanduser()
+    path = Path(path_value).expanduser()  # 将path_value中的~转化为实际的路径
     if not path.is_absolute():
-        path = Path.cwd() / path
+        path = Path.cwd() / path  # Path.cwd()是运行python命令所在目录
     if not path.exists():
         return f"File not found: {path}"
     if not path.is_file():
@@ -194,6 +216,39 @@ def search_files_tool(args: dict) -> str:
     if matches:
         return "\n".join(matches)
     return f"No matches for {query!r} under {_display_path(path)}"
+
+
+def terminal_tool(args: dict) -> str:
+    command = str(args.get("command", "")).strip()
+    if not command:
+        return "Missing required argument: command"
+    blocked_tokens = (";", "&&", "||", "|", ">", "<", "`", "$(", "\n")
+    if any(token in command for token in blocked_tokens):
+        return "Refusing command with shell control operators."
+
+    timeout = min(max(int(args.get("timeout") or 10), 1), 30)
+    try:
+        result = subprocess.run(
+            command.split(),
+            cwd=Path.cwd(),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError:
+        return f"Command not found: {command.split()[0]}"
+    except subprocess.TimeoutExpired:
+        return f"Command timed out after {timeout}s"
+
+    output = result.stdout.strip()
+    error = result.stderr.strip()
+    parts = [f"exit_code: {result.returncode}"]
+    if output:
+        parts.append(f"stdout:\n{output}")
+    if error:
+        parts.append(f"stderr:\n{error}")
+    return "\n".join(parts)
 
 
 def _iter_text_files(path: Path) -> list[Path]:

@@ -1,0 +1,14 @@
+{
+  "name": "bank-credit-mvp",
+  "label": "Credit Flow",
+  "description": "MVP bank credit workflow runner with blocking external steps.",
+  "icon": "Landmark",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/credit-flow",
+    "position": "after:kanban"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}

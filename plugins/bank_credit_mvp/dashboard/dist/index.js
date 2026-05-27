@@ -223,7 +223,10 @@
             h("div", { className: "bc-eyebrow" }, "Execution plan"),
             h("h3", null, "执行计划")
           ),
-          h(Button, { size: "sm", variant: "outline", onClick: function () { props.onAdvance({}); } }, "检查并推进")
+          h("div", { className: "bc-head-actions" },
+            h(Button, { size: "sm", variant: "outline", onClick: props.onPoll }, "轮询阻塞业务"),
+            h(Button, { size: "sm", variant: "outline", onClick: function () { props.onAdvance({}); } }, "检查并推进")
+          )
         ),
         (c.steps || []).map(function (step, index) {
           return h(StepCard, {
@@ -351,6 +354,13 @@
             mutate(function () {
               return api("/cases/" + encodeURIComponent(selectedId) + "/mock/financial-ready", {
                 method: "POST",
+              });
+            });
+          },
+          onPoll: function () {
+            mutate(function () {
+              return api("/poll", { method: "POST" }).then(function () {
+                return api("/cases/" + encodeURIComponent(selectedId));
               });
             });
           },

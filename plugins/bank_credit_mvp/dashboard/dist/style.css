@@ -87,6 +87,7 @@
 .bc-case-meta,
 .bc-step-title,
 .bc-step-actions,
+.bc-head-actions,
 .bc-hero-side {
   display: flex;
   align-items: center;
@@ -233,6 +234,11 @@
 .bc-step-actions {
   flex-wrap: wrap;
   margin-top: 10px;
+}
+
+.bc-head-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .bc-link {

@@ -215,9 +215,11 @@ def advance_case(case_id: str, report_fields: Optional[Dict[str, Any]] = None) -
             case["report_fields"]["customer_no"] = ext.get("customer_no") or f"CUST-{case_id[-6:].upper()}"
             _event(case, "external_check_passed", "已查询到客户号，流程继续。")
         else:
+            was_waiting = customer_step.get("status") == "action_required"
             customer_step["status"] = "action_required"
             customer_step["last_checked_at"] = _now()
-            _event(case, "external_blocked", "等待客户经理在外部系统开立客户号。")
+            if not was_waiting:
+                _event(case, "external_blocked", "等待客户经理在外部系统开立客户号。")
             _set_current_step(case)
             _write_state(state)
             return _normalize_case(copy.deepcopy(case))
@@ -279,6 +281,40 @@ def mark_financial_ready(case_id: str) -> Dict[str, Any]:
     ext["financial_data_ready"] = True
     _write_state(state)
     return advance_case(case_id)
+
+
+def poll_cases() -> Dict[str, Any]:
+    """Advance all non-completed cases until blocked or complete.
+
+    This is the operation a Hermes cron job should call. In the MVP the
+    external system flags are mock state; in production this function should
+    query real bank systems before calling ``advance_case``.
+    """
+    state = _read_state()
+    case_ids = [
+        str(case.get("id"))
+        for case in state.get("cases", [])
+        if case.get("id") and case.get("status") != "completed"
+    ]
+    results: List[Dict[str, Any]] = []
+    for case_id in case_ids:
+        before = get_case(case_id)
+        after = advance_case(case_id)
+        results.append({
+            "case_id": case_id,
+            "before_status": before.get("status"),
+            "after_status": after.get("status"),
+            "before_step": before.get("current_step"),
+            "after_step": after.get("current_step"),
+            "changed": before.get("status") != after.get("status")
+            or before.get("current_step") != after.get("current_step")
+            or before.get("progress") != after.get("progress"),
+        })
+    return {
+        "checked": len(case_ids),
+        "changed": sum(1 for item in results if item["changed"]),
+        "results": results,
+    }
 
 
 def reset_demo() -> Dict[str, Any]:

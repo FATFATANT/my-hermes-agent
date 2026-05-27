@@ -34,6 +34,31 @@ scripts/run_tests.sh plugins/bank_credit_mvp/tests/test_workflow.py -q
 - 初次推进会停在“开立客户号”人工阻塞步骤。
 - 模拟外部系统已开客户号后，流程会继续执行。
 - 调查报告基础要素保存，财报同步作为可选步骤跳过，最后保存草稿。
+- 轮询工具可以扫描未完成业务，并在外部条件满足后推进。
+
+## 2.1 启用对话插件
+
+如果你想在 Hermes 对话或 cron 里调用信贷流程工具，先启用插件：
+
+```bash
+hermes plugins enable bank-credit-mvp
+```
+
+启用后重新打开一个 Hermes 会话。插件工具集名是：
+
+```text
+bank_credit
+```
+
+可用工具包括：
+
+```text
+bank_credit_list_cases
+bank_credit_get_case
+bank_credit_advance_case
+bank_credit_poll_cases
+bank_credit_mock_customer_created
+```
 
 ## 3. 启动 Hermes Dashboard
 
@@ -131,7 +156,19 @@ http://127.0.0.1:18084/sessions
 
 如果想从头再跑一遍，点击左侧 `重置`。
 
-## 9. 可选：创建新业务
+## 9. 可选：验证轮询按钮
+
+页面中的 `轮询阻塞业务` 对应 cron 后续会调用的轮询能力。
+
+验证方式：
+
+1. 点击 `重置`。
+2. 点击 `检查并推进`，让业务停在 `开立客户号`。
+3. 点击 `模拟已开客户号`。
+4. 如果页面已自动完成，说明外部条件满足后推进正常。
+5. 也可以在阻塞后点击 `轮询阻塞业务`，它会检查所有未完成业务；外部条件未满足时会保持阻塞。
+
+## 10. 可选：创建新业务
 
 页面顶部可以填写：
 
@@ -143,7 +180,34 @@ http://127.0.0.1:18084/sessions
 
 新业务会进入同样的执行计划。
 
-## 10. 可选：验证插件被 Dashboard 发现
+## 11. 可选：创建 cron 轮询任务
+
+先确保插件已启用，并打开新会话确认工具可用。
+
+创建一个每 5 分钟检查一次的 cron job：
+
+```bash
+hermes cron create \
+  "every 5m" \
+  "检查所有未完成的银行信贷业务。调用 bank_credit_poll_cases。只汇报状态发生变化的业务，以及仍然阻塞且需要客户经理处理的业务。不要伪造外部系统完成结果。" \
+  --name "Bank credit workflow poller" \
+  --skill bank-credit-workflow
+```
+
+手动触发一次：
+
+```bash
+hermes cron run <job_id>
+hermes cron tick
+```
+
+查看任务：
+
+```bash
+hermes cron list
+```
+
+## 12. 可选：验证插件被 Dashboard 发现
 
 ```bash
 curl -s http://127.0.0.1:18084/api/dashboard/plugins
@@ -157,7 +221,7 @@ curl -s http://127.0.0.1:18084/api/dashboard/plugins
 
 注意：业务接口 `/api/plugins/bank-credit-mvp/...` 有 dashboard 会话鉴权，直接 `curl` 不带 token 会返回 `Unauthorized`，这是正常的。页面内访问会自动带 token。
 
-## 11. 当前实现边界
+## 13. 当前实现边界
 
 这个 MVP 目前使用 mock 外部系统状态：
 

@@ -39,6 +39,10 @@ def _advance_case(args: Dict[str, Any], **_kw: Any) -> str:
         return _json({"success": False, "error": f"case not found: {case_id}"})
 
 
+def _poll_cases(args: Dict[str, Any], **_kw: Any) -> str:
+    return _json({"success": True, "poll": workflow.poll_cases()})
+
+
 def _mock_customer_created(args: Dict[str, Any], **_kw: Any) -> str:
     case_id = str(args.get("case_id") or "").strip()
     customer_no = str(args.get("customer_no") or "").strip() or None
@@ -91,6 +95,15 @@ TOOLS = (
             },
         },
         _advance_case,
+    ),
+    (
+        "bank_credit_poll_cases",
+        {
+            "name": "bank_credit_poll_cases",
+            "description": "Poll bank credit cases and advance any case whose external blocking condition is now satisfied.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        _poll_cases,
     ),
     (
         "bank_credit_mock_customer_created",

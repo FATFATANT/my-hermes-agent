@@ -69,6 +69,11 @@ async def mock_financial_ready(case_id: str):
         raise HTTPException(status_code=404, detail="Case not found.") from exc
 
 
+@router.post("/poll")
+async def poll_cases():
+    return {"poll": workflow.poll_cases()}
+
+
 @router.post("/reset-demo")
 async def reset_demo():
     return {"case": workflow.reset_demo()}

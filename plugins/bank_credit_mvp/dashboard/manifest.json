@@ -8,6 +8,7 @@
     "path": "/credit-flow",
     "position": "after:kanban"
   },
+  "slots": ["chat:sidebar"],
   "entry": "dist/index.js",
   "css": "dist/style.css",
   "api": "plugin_api.py"

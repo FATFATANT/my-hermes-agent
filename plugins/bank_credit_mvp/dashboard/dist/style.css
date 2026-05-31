@@ -263,6 +263,182 @@
   font-size: 0.82rem;
 }
 
+.bc-side-card {
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card) / 0.58);
+  padding: 10px;
+  flex: 0 0 auto;
+  max-height: 58vh;
+  overflow-y: auto;
+}
+
+.bc-side-card-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid hsl(var(--border) / 0.7);
+  margin-bottom: 8px;
+}
+
+.bc-side-case {
+  border-top: 1px solid hsl(var(--border) / 0.6);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+
+.bc-side-case:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.bc-side-error {
+  border-color: hsl(var(--destructive) / 0.35);
+  color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 0.08);
+}
+
+.bc-side-head,
+.bc-side-actions,
+.bc-side-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bc-side-head,
+.bc-side-actions {
+  justify-content: space-between;
+}
+
+.bc-poll-button {
+  min-width: 76px;
+}
+
+.bc-poll-button[aria-busy="true"] {
+  opacity: 0.72;
+}
+
+.bc-side-head strong {
+  display: block;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bc-side-current {
+  margin-top: 10px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background) / 0.45);
+  padding: 8px;
+}
+
+.bc-side-current span,
+.bc-side-step small {
+  display: block;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.7rem;
+}
+
+.bc-side-current strong {
+  display: block;
+  margin-top: 3px;
+}
+
+.bc-side-current em,
+.bc-side-step em {
+  display: inline-flex;
+  margin-top: 5px;
+  font-style: normal;
+}
+
+.bc-side-hint {
+  margin: 10px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.bc-side-steps {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.bc-side-step {
+  align-items: flex-start;
+  border: 1px solid hsl(var(--border) / 0.75);
+  padding: 7px;
+}
+
+.bc-side-step-active {
+  border-color: hsl(var(--primary) / 0.65);
+  background: hsl(var(--primary) / 0.08);
+}
+
+.bc-side-step > span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  font-size: 0.7rem;
+}
+
+.bc-side-step > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.bc-side-step strong {
+  display: block;
+  font-size: 0.8rem;
+}
+
+.bc-side-step em {
+  flex: 0 0 auto;
+}
+
+.bc-side-actions {
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.bc-hidden-flows {
+  border-top: 1px solid hsl(var(--border) / 0.7);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.bc-hidden-head,
+.bc-hidden-flow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.bc-hidden-head {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.76rem;
+}
+
+.bc-hidden-flow {
+  border: 1px solid hsl(var(--border) / 0.72);
+  margin-top: 8px;
+  padding: 7px;
+}
+
+.bc-hidden-flow span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.76rem;
+}
+
 .bc-busy {
   border: 1px solid hsl(var(--border));
   padding: 8px 10px;

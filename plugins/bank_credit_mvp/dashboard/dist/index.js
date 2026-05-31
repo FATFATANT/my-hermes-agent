@@ -147,6 +147,17 @@
             variant: "outline",
             onClick: props.onMockFinancial,
           }, "模拟财报已维护") : null
+          ,
+          step.id === "risk_admission_review" ? h(Button, {
+            size: "sm",
+            variant: "outline",
+            onClick: function () { props.onMockExternalTask("risk_admission"); },
+          }, "模拟风险复核通过") : null,
+          step.id === "collateral_confirmation" ? h(Button, {
+            size: "sm",
+            variant: "outline",
+            onClick: function () { props.onMockExternalTask("collateral_confirmation"); },
+          }, "模拟担保落实") : null
         ) : null,
         step.missing_fields && step.missing_fields.length
           ? h("div", { className: "bc-warning" }, "缺少字段：" + step.missing_fields.join(", "))
@@ -235,6 +246,7 @@
             index: index,
             onMockCustomer: props.onMockCustomer,
             onMockFinancial: props.onMockFinancial,
+            onMockExternalTask: props.onMockExternalTask,
           });
         })
       ),
@@ -254,6 +266,246 @@
           })
         )
       )
+    );
+  }
+
+  function SidebarPlan() {
+    function currentSessionId() {
+      return window.__HERMES_CHAT_SESSION_ID__ || window.__HERMES_CHAT_RESUME_SESSION_ID__ || "";
+    }
+    const [sessionId, setSessionId] = useState(currentSessionId);
+    const [cases, setCases] = useState([]);
+    const [hiddenCases, setHiddenCases] = useState([]);
+    const [recoverableCases, setRecoverableCases] = useState([]);
+    const [error, setError] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [lastNoticeKey, setLastNoticeKey] = useState("");
+
+    function askChat(text) {
+      window.dispatchEvent(new CustomEvent("bank-credit-chat-prompt", { detail: { text: text } }));
+    }
+
+    function load(nextSessionId) {
+      const sid = nextSessionId || sessionId || currentSessionId();
+      if (!sid) {
+        setCases([]);
+        return Promise.resolve([]);
+      }
+      setSessionId(sid);
+      const encodedSid = encodeURIComponent(sid);
+      return Promise.all([
+        api("/sessions/" + encodedSid + "/cases"),
+        api("/sessions/" + encodedSid + "/hidden-cases").catch(function () { return { cases: [] }; }),
+        api("/cases").catch(function () { return { cases: [] }; }),
+      ]).then(function (results) {
+        const present = results[0].cases || [];
+        const hidden = results[1].cases || [];
+        const presentIds = new Set(present.concat(hidden).map(function (c) { return c.id; }));
+        const recoverable = (results[2].cases || []).filter(function (c) { return !presentIds.has(c.id); }).slice(0, 3);
+        setCases(present);
+        setHiddenCases(hidden);
+        setRecoverableCases(recoverable);
+        return present;
+      }).catch(function (err) {
+        setError(err.message || String(err));
+        return [];
+      });
+    }
+
+    function poll() {
+      const sid = sessionId || currentSessionId();
+      if (!sid || !cases.length) return Promise.resolve([]);
+      setBusy(true);
+      setError("");
+      const before = new Map(cases.map(function (c) { return [c.id, c]; }));
+      return api("/poll", { method: "POST" })
+        .then(function () { return load(sid); })
+        .then(function (updatedCases) {
+          updatedCases.forEach(function (updated) {
+            const previous = before.get(updated.id);
+            const key = [updated.id, updated.status, updated.current_step || "done", updated.progress].join(":");
+            const stepChanged = previous && previous.current_step !== updated.current_step;
+            const finished = updated.status === "completed" && (!previous || previous.status !== "completed");
+            if ((stepChanged || finished) && key !== lastNoticeKey) {
+              setLastNoticeKey(key);
+              askChat("我已经完成外部系统状态检查，请使用 bank_credit_get_case 查看 " + updated.id + " 的最新状态，并继续提示客户经理下一步。");
+            }
+          });
+          return updatedCases;
+        })
+        .catch(function (err) { setError(err.message || String(err)); return []; })
+        .finally(function () { setBusy(false); });
+    }
+
+    useEffect(function () {
+      load(currentSessionId());
+    }, []);
+
+    useEffect(function () {
+      function onSession(ev) {
+        const sid = ev && ev.detail && ev.detail.sessionId;
+        if (sid) load(sid);
+      }
+      window.addEventListener("bank-credit-chat-session", onSession);
+      return function () { window.removeEventListener("bank-credit-chat-session", onSession); };
+    }, [sessionId]);
+
+    useEffect(function () {
+      function onTool(ev) {
+        const detail = ev && ev.detail || {};
+        const sid = currentSessionId() || detail.sessionId || sessionId;
+        const caseId = detail.caseId;
+        if (sid && caseId) {
+          api("/sessions/" + encodeURIComponent(sid) + "/cases/" + encodeURIComponent(caseId), { method: "POST" })
+            .then(function () { return load(sid); })
+            .catch(function () { return load(sid); });
+          return;
+        }
+        load(sid);
+      }
+      window.addEventListener("bank-credit-chat-tool", onTool);
+      return function () { window.removeEventListener("bank-credit-chat-tool", onTool); };
+    }, [sessionId]);
+
+    useEffect(function () {
+      if (!sessionId || !cases.length) return;
+      const timer = window.setInterval(poll, 5000);
+      return function () { window.clearInterval(timer); };
+    }, [sessionId, cases.map(function (c) { return c.id + ":" + c.status + ":" + c.current_step; }).join("|"), lastNoticeKey]);
+
+    if (!cases.length && !hiddenCases.length && !recoverableCases.length && !error) {
+      return null;
+    }
+
+    if (error) {
+      return h("div", { className: "bc-side-card bc-side-error" }, error);
+    }
+
+    function hideCase(id) {
+      const sid = sessionId || currentSessionId();
+      if (sid) api("/sessions/" + encodeURIComponent(sid) + "/cases/" + encodeURIComponent(id), { method: "DELETE" }).catch(function () {});
+      const nextCases = cases.filter(function (c) { return c.id !== id; });
+      const hidden = cases.find(function (c) { return c.id === id; });
+      setCases(nextCases);
+      if (hidden) {
+        setHiddenCases(hiddenCases.some(function (c) { return c.id === id; }) ? hiddenCases : hiddenCases.concat([hidden]));
+      }
+    }
+
+    function restoreCase(id) {
+      const sid = sessionId || currentSessionId();
+      const hidden = hiddenCases.find(function (c) { return c.id === id; });
+      const recoverable = recoverableCases.find(function (c) { return c.id === id; });
+      if (sid) api("/sessions/" + encodeURIComponent(sid) + "/cases/" + encodeURIComponent(id), { method: "POST" }).catch(function () {});
+      const restored = hidden || recoverable;
+      if (restored && !cases.some(function (c) { return c.id === id; })) {
+        setCases(cases.concat([restored]));
+      }
+      setHiddenCases(hiddenCases.filter(function (c) { return c.id !== id; }));
+      setRecoverableCases(recoverableCases.filter(function (c) { return c.id !== id; }));
+    }
+
+    function restoreAllHidden() {
+      const sid = sessionId || currentSessionId();
+      if (sid) {
+        hiddenCases.forEach(function (c) {
+          api("/sessions/" + encodeURIComponent(sid) + "/cases/" + encodeURIComponent(c.id), { method: "POST" }).catch(function () {});
+        });
+      }
+      const existing = new Set(cases.map(function (c) { return c.id; }));
+      setCases(cases.concat(hiddenCases.filter(function (c) { return !existing.has(c.id); })));
+      setHiddenCases([]);
+    }
+
+    function renderCase(caseData) {
+      const current = (caseData.steps || []).find(function (s) { return s.id === caseData.current_step; });
+      return h("div", { className: "bc-side-case", key: caseData.id },
+        h("div", { className: "bc-side-head" },
+          h("div", null,
+            h("div", { className: "bc-eyebrow" }, "Bank credit workflow"),
+            h("strong", null, caseData.applicant_name)
+          ),
+          h("span", { className: statusClass(caseData.status) }, statusLabel(caseData.status))
+        ),
+        current ? h("div", { className: "bc-side-current" },
+          h("span", null, "当前步骤"),
+          h("strong", null, current.title),
+          h("em", null, statusLabel(current.status))
+        ) : h("div", { className: "bc-side-current" },
+          h("span", null, "当前步骤"),
+          h("strong", null, "流程已完成"),
+          h("em", null, "已完成")
+        ),
+        h("div", { className: "bc-side-steps" },
+          (caseData.steps || []).map(function (step, index) {
+            return h("div", {
+              key: step.id,
+              className: step.id === caseData.current_step ? "bc-side-step bc-side-step-active" : "bc-side-step",
+            },
+              h("span", null, String(index + 1)),
+              h("div", null,
+                h("strong", null, step.title),
+                h("small", null, kindLabel(step.kind))
+              ),
+              h("em", { className: statusClass(step.status) }, statusLabel(step.status))
+            );
+          })
+        ),
+        h("div", { className: "bc-side-actions" },
+          current && current.external_url ? h("a", {
+            className: "bc-link",
+            href: current.external_url,
+            target: "_blank",
+            rel: "noreferrer",
+          }, "打开外部系统") : null,
+          h(Button, {
+            size: "sm",
+            className: "bc-poll-button",
+            onClick: poll,
+            disabled: busy,
+            "aria-busy": busy ? "true" : "false",
+          }, "轮询检查"),
+          h(Button, {
+            size: "sm",
+            variant: "outline",
+            onClick: function () { askChat("请查看当前信贷业务 " + caseData.id + " 的执行计划，并告诉我现在卡在哪一步、我应该做什么。"); },
+          }, "让模型说明下一步"),
+          h(Button, { size: "sm", variant: "outline", onClick: function () { hideCase(caseData.id); } }, "隐藏")
+        )
+      );
+    }
+
+    return h("div", { className: "bc-side-card" },
+      h("div", { className: "bc-side-head bc-side-card-head" },
+        h("div", null,
+          h("div", { className: "bc-eyebrow" }, "Current chat credit flows"),
+          h("strong", null, "本轮对话信贷流程")
+        ),
+        h(Button, { size: "sm", variant: "outline", onClick: function () { load(currentSessionId()); } }, "刷新")
+      ),
+      cases.length ? cases.map(renderCase) : h("p", { className: "bc-side-hint" }, "正在等待本轮对话中的信贷工具调用。"),
+      hiddenCases.length ? h("div", { className: "bc-hidden-flows" },
+        h("div", { className: "bc-hidden-head" },
+          h("span", null, "已隐藏 " + hiddenCases.length + " 个信贷流程"),
+          h(Button, { size: "sm", variant: "outline", onClick: restoreAllHidden }, "全部显示")
+        ),
+        hiddenCases.map(function (caseData) {
+          return h("div", { className: "bc-hidden-flow", key: "hidden-" + caseData.id },
+            h("span", null, caseData.id + " · " + caseData.applicant_name),
+            h(Button, { size: "sm", variant: "outline", onClick: function () { restoreCase(caseData.id); } }, "显示")
+          );
+        })
+      ) : !cases.length && recoverableCases.length ? h("div", { className: "bc-hidden-flows" },
+        h("div", { className: "bc-hidden-head" },
+          h("span", null, "当前会话没有显示的信贷流程")
+        ),
+        recoverableCases.map(function (caseData) {
+          return h("div", { className: "bc-hidden-flow", key: "recoverable-" + caseData.id },
+            h("span", null, caseData.id + " · " + caseData.applicant_name),
+            h(Button, { size: "sm", variant: "outline", onClick: function () { restoreCase(caseData.id); } }, "显示")
+          );
+        })
+      ) : null
     );
   }
 
@@ -297,6 +549,17 @@
     useEffect(function () { reload(null); }, []);
     useEffect(function () {
       if (selectedId) refreshCase(selectedId).catch(function (err) { setError(err.message || String(err)); });
+    }, [selectedId]);
+    useEffect(function () {
+      if (!selectedId) return;
+      const timer = window.setInterval(function () {
+        api("/poll", { method: "POST" }).then(function () {
+          return reload(selectedId);
+        }).catch(function (err) {
+          setError(err.message || String(err));
+        });
+      }, 5000);
+      return function () { window.clearInterval(timer); };
     }, [selectedId]);
 
     function mutate(fn) {
@@ -357,6 +620,14 @@
               });
             });
           },
+          onMockExternalTask: function (task) {
+            mutate(function () {
+              return api("/cases/" + encodeURIComponent(selectedId) + "/mock/external-task-done", {
+                method: "POST",
+                body: JSON.stringify({ task: task }),
+              });
+            });
+          },
           onPoll: function () {
             mutate(function () {
               return api("/poll", { method: "POST" }).then(function () {
@@ -371,5 +642,8 @@
 
   if (window.__HERMES_PLUGINS__ && typeof window.__HERMES_PLUGINS__.register === "function") {
     window.__HERMES_PLUGINS__.register("bank-credit-mvp", CreditFlowPage);
+    if (typeof window.__HERMES_PLUGINS__.registerSlot === "function") {
+      window.__HERMES_PLUGINS__.registerSlot("bank-credit-mvp", "chat:sidebar", SidebarPlan);
+    }
   }
 })();

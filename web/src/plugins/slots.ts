@@ -55,6 +55,7 @@ import React, { Fragment, useEffect, useState } from "react";
  *  - `docs:top`         — top of /docs page (above the docs iframe)
  *  - `docs:bottom`      — bottom of /docs page
  *  - `chat:top`         — top of /chat page (above the composer, when embedded chat is on)
+ *  - `chat:sidebar`     — inside /chat right sidebar, below model/tool activity
  *  - `chat:bottom`      — bottom of /chat page
  */
 export const KNOWN_SLOT_NAMES = [
@@ -89,6 +90,7 @@ export const KNOWN_SLOT_NAMES = [
   "docs:top",
   "docs:bottom",
   "chat:top",
+  "chat:sidebar",
   "chat:bottom",
 ] as const;
 

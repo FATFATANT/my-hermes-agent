@@ -20,7 +20,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type IBufferRange } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Typography } from "@/components/NouiTypography";
@@ -69,6 +69,35 @@ const TERMINAL_THEME = {
   cursorAccent: "#0d2626",
   selectionBackground: "#f0e6d244",
 };
+
+function openDashboardTerminalLink(event: MouseEvent, uri: string): void {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
+
+  let url: URL;
+  try {
+    url = new URL(uri);
+  } catch {
+    return;
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return;
+  }
+
+  window.open(url.toString(), "_blank", "noopener,noreferrer");
+}
+
+// xterm can batch mouse press/release reports together with other input.
+// Strip every SGR mouse packet so a link click handled by the browser-side
+// terminal does not also reach the embedded Ink app and open the same URL.
+// eslint-disable-next-line no-control-regex -- intentional ESC byte in SGR parser
+const SGR_MOUSE_RE = /\x1b\[<\d+;\d+;\d+[Mm]/g;
+
+function stripSgrMouseReports(data: string): string {
+  return data.replace(SGR_MOUSE_RE, "");
+}
 
 /**
  * CSS width for xterm font tiers.
@@ -286,10 +315,19 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       fontWeight: "400",
       fontWeightBold: "700",
       macOptionIsMeta: true,
-      // Single-scroll-system experiment:
-      // let the inner Hermes TUI own transcript history/scroll behavior.
-      // The outer browser xterm should act as a display/input bridge only.
-      scrollback: 0,
+      linkHandler: {
+        activate: (
+          event: MouseEvent,
+          text: string,
+          _range: IBufferRange,
+        ) => openDashboardTerminalLink(event, text),
+        allowNonHttpProtocols: false,
+      },
+      // Keep browser-side scrollback available for the embedded chat.  The
+      // inner TUI still owns its virtual transcript, but xterm scrollback is
+      // the reliable fallback users expect when reviewing older output in the
+      // dashboard.
+      scrollback: 5000,
       theme: TERMINAL_THEME,
     });
     termRef.current = term;
@@ -392,15 +430,10 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     fitRef.current = fit;
     term.loadAddon(fit);
 
-    // Single-scroll-system experiment:
-    // keep browser xterm as a display/input bridge only, and let the inner
-    // Hermes TUI own transcript scrolling.
-    //
-    // In practice, the most reliable path here is NOT terminal mouse-wheel
-    // protocol emulation — that can vary by terminal mode and parser path.
-    // The inner TUI already handles keyboard-driven transcript scrolling
-    // correctly (`Shift+Up` / `Shift+Down`, `PageUp` / `PageDown`), so we
-    // translate browser wheel gestures into those known-good key sequences.
+    // The embedded Ink TUI runs in alternate-screen mode, so browser-side
+    // xterm scrollback is not enough for normal wheel gestures. Mouse reports
+    // are stripped below to avoid link-click bytes leaking into the PTY, so
+    // translate wheel gestures into the TUI's keyboard scroll shortcuts.
     term.attachCustomWheelEventHandler((ev) => {
       if (wsRef.current?.readyState !== WebSocket.OPEN) {
         return false;
@@ -411,9 +444,6 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         return false;
       }
 
-      // Shift+Up / Shift+Down: the TUI maps these to line-by-line
-      // transcript scrolling, which feels much closer to wheel behavior
-      // than PageUp/PageDown's half-page jumps.
       const step = Math.max(1, Math.round(Math.abs(delta) / 50));
       const seq = delta > 0 ? "\x1b[1;2B" : "\x1b[1;2A";
 
@@ -430,7 +460,11 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     term.loadAddon(unicode11);
     term.unicode.activeVersion = "11";
 
-    term.loadAddon(new WebLinksAddon());
+    term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        openDashboardTerminalLink(event, uri);
+      }),
+    );
 
     term.open(host);
 
@@ -612,17 +646,27 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     // mouse reporting, so we drop SGR mouse reports entirely instead of
     // forwarding them into Hermes. Keyboard input, paste, and resize still
     // behave normally.
-    // eslint-disable-next-line no-control-regex -- intentional ESC byte in xterm SGR mouse report parser
-    const SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/;
     const onDataDisposable = term.onData((data) => {
       if (ws.readyState !== WebSocket.OPEN) return;
 
-      if (SGR_MOUSE_RE.test(data)) {
+      const input = stripSgrMouseReports(data);
+      if (!input) {
         return;
       }
 
-      ws.send(data);
+      ws.send(input);
     });
+
+    const onBankCreditPrompt = (ev: Event) => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      const detail = (ev as CustomEvent<{ text?: string }>).detail;
+      const text = detail?.text?.trim();
+      if (!text) return;
+      ws.send(text);
+      ws.send("\r");
+      term.focus();
+    };
+    window.addEventListener("bank-credit-chat-prompt", onBankCreditPrompt);
 
     const onResizeDisposable = term.onResize(({ cols, rows }) => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -637,6 +681,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       syncMetricsRef.current = null;
       onDataDisposable.dispose();
       onResizeDisposable.dispose();
+      window.removeEventListener("bank-credit-chat-prompt", onBankCreditPrompt);
       if (metricsDebounce) clearTimeout(metricsDebounce);
       window.removeEventListener("resize", scheduleSyncTerminalMetrics);
       window.visualViewport?.removeEventListener(
@@ -677,6 +722,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // they come back — that's a surprise and an a11y foot-gun.
   useEffect(() => {
     if (!isActive) return;
+    window.__HERMES_CHAT_CHANNEL__ = channel;
+    window.__HERMES_CHAT_RESUME_SESSION_ID__ = resumeParam ?? "";
     let raf1 = 0;
     let raf2 = 0;
     raf1 = requestAnimationFrame(() => {
@@ -868,5 +915,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
 declare global {
   interface Window {
     __HERMES_SESSION_TOKEN__?: string;
+    __HERMES_CHAT_CHANNEL__?: string;
+    __HERMES_CHAT_RESUME_SESSION_ID__?: string;
   }
 }

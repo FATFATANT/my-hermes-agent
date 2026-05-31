@@ -14,8 +14,8 @@ metadata:
 # Bank Credit Workflow Skill
 
 Use this skill to help a relationship manager advance a bank credit workflow
-case through Hermes. It covers the MVP plugin workflow and does not authorize
-Hermes to operate unrelated bank systems directly.
+case through Hermes. The mock bank internal system owns workflow orders and
+Hermes acts as a client for querying or changing those orders.
 
 ## When to Use
 
@@ -37,9 +37,27 @@ hermes plugins enable bank-credit-mvp
 If the toolset is not visible after enabling, start a new Hermes session. The
 plugin toolset is named `bank_credit`.
 
+The mock bank internal backend should be running at `BANK_CREDIT_EXTERNAL_API`
+or `http://127.0.0.1:8080` by default.
+
 ## How to Run
 
-Start by listing or selecting a case:
+If the user wants to start a new credit workflow, first confirm intent and
+collect the applicant name, amount, and purpose. Do not create an order from a
+general intent statement such as "我想办理一笔信贷业务"; ask the user to confirm
+that Hermes should create the workflow order now.
+
+After the user explicitly confirms, create a case:
+
+```text
+bank_credit_create_case
+```
+
+Do not use `execute_code` or import `plugins.bank_credit_mvp.workflow` to
+create or mutate cases from chat. Use the `bank_credit_*` tools so the
+dashboard can bind the case to the current Hermes session.
+
+If the user is asking about an existing workflow, list or select a case:
 
 ```text
 bank_credit_list_cases
@@ -63,12 +81,12 @@ bank_credit_poll_cases
 Tools:
 
 - `bank_credit_list_cases`: list workflow cases and current status.
+- `bank_credit_create_case`: create a new workflow case with applicant name,
+  amount, and purpose; the new case is linked to the current Hermes session.
 - `bank_credit_get_case`: inspect one case, its steps, fields, and events.
 - `bank_credit_advance_case`: advance one case until complete or blocked.
 - `bank_credit_poll_cases`: scan non-completed cases and advance those whose
   external blocking condition is now satisfied.
-- `bank_credit_mock_customer_created`: demo-only helper for simulating the
-  external customer-number system.
 
 Step types:
 
@@ -81,8 +99,13 @@ Step types:
 ## Procedure
 
 1. Identify the case.
-   If the user names a customer, call `bank_credit_list_cases` and match the
-   customer name. If ambiguous, ask which case to use.
+   If the user expresses intent to办理/发起/新建 a credit workflow, do not call
+   `bank_credit_create_case` yet. Ask for confirmation plus any missing fields:
+   applicant name, amount, and purpose. Only after the user explicitly confirms
+   creating the order now, call `bank_credit_create_case` with
+   `confirmed=true`. If the user asks about an existing workflow, call
+   `bank_credit_list_cases` and match the customer name. If ambiguous, ask
+   which case to use.
 
 2. Inspect the case.
    Call `bank_credit_get_case` before changing state. Summarize the current
@@ -105,13 +128,23 @@ Step types:
    In a cron job, call `bank_credit_poll_cases`, report how many cases were
    checked, and mention only cases whose status changed or remain blocked.
 
+Dashboard behavior:
+
+- The chat sidebar should show only cases linked to the current Hermes session.
+- A fresh chat starts with no credit workflow panel.
+- Returning to a resumed chat should reload the cases linked to that session.
+- `/credit-flow` remains the global operations/debug view and may show all
+  credit cases.
+
 ## Pitfalls
 
 Do not pretend an external bank system action has been completed unless a tool
 result says so.
 
-Do not use the demo helper `bank_credit_mock_customer_created` in a real bank
-workflow. It exists only for local MVP verification.
+Never simulate customer-number creation, risk admission, collateral
+confirmation, or any other external blocking step on the user's behalf. When a
+case blocks, give the user the external system link and wait for polling or
+`bank_credit_advance_case` to observe that the bank system status changed.
 
 Do not mark optional financial data as required unless the case definition says
 the step is blocking.
@@ -123,9 +156,10 @@ Do not expose customer-sensitive fields beyond what the user requested.
 For local MVP verification:
 
 1. Call `bank_credit_list_cases`.
-2. Pick the demo case.
-3. Call `bank_credit_advance_case`.
+2. Call `bank_credit_create_case` with an applicant name, amount, and purpose.
+3. Call `bank_credit_advance_case` for the created case.
 4. Confirm it stops at `open_customer_no` with `action_required`.
-5. In the dashboard or demo flow, simulate customer number creation.
+5. Open the external customer-number page and complete the customer-number
+   operation there.
 6. Call `bank_credit_poll_cases` or `bank_credit_advance_case`.
 7. Confirm the case reaches `completed`.

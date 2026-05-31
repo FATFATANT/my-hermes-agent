@@ -1,323 +1,257 @@
-"""Durable JSON-backed MVP workflow for bank credit cases."""
+"""HTTP client for bank credit workflow cases owned by the mock bank system."""
 
 from __future__ import annotations
 
-import copy
 import json
-import time
-import uuid
-from pathlib import Path
+import os
+import threading
 from typing import Any, Dict, List, Optional
+from urllib.error import HTTPError
+from urllib.parse import urlencode
+from urllib.request import ProxyHandler, Request, build_opener
 
 from hermes_constants import get_hermes_home
 
 
-STORE_DIR = get_hermes_home() / "plugins" / "bank-credit-mvp"
-STORE_PATH = STORE_DIR / "state.json"
+NO_PROXY_OPENER = build_opener(ProxyHandler({}))
+LINKS_DIR = get_hermes_home() / "plugins" / "bank-credit-mvp"
+SESSION_LINKS_PATH = LINKS_DIR / "session_links.json"
+SESSION_LINKS_LOCK = threading.Lock()
 
 
-STEP_TEMPLATES: List[Dict[str, Any]] = [
-    {
-        "id": "open_customer_no",
-        "title": "开立客户号",
-        "kind": "external_blocking",
-        "status": "pending",
-        "blocking": True,
-        "external_url": "https://credit-demo.bank.local/customer/open",
-        "check": "query_customer_no_exists",
-        "summary": "需要客户经理到客户信息系统开立客户号，完成后系统会自动检查。",
-    },
-    {
-        "id": "fill_investigation_report",
-        "title": "填写调查报告基础要素",
-        "kind": "internal_api",
-        "status": "pending",
-        "blocking": True,
-        "tool": "save_investigation_report_fields",
-        "summary": "由 Hermes 收集业务数据，并通过本系统接口保存调查报告字段。",
-    },
-    {
-        "id": "sync_financial_data",
-        "title": "同步财报数据",
-        "kind": "external_optional",
-        "status": "pending",
-        "blocking": False,
-        "external_url": "https://credit-demo.bank.local/financials",
-        "check": "query_financial_data_ready",
-        "summary": "客户经理可到财报系统维护数据；未完成也不阻塞主流程。",
-    },
-    {
-        "id": "save_report",
-        "title": "保存调查报告草稿",
-        "kind": "internal_api",
-        "status": "pending",
-        "blocking": True,
-        "tool": "save_report_draft",
-        "summary": "基础要素齐备后自动保存调查报告草稿。",
-    },
-]
+def _external_frontend_base() -> str:
+    return os.getenv("BANK_CREDIT_EXTERNAL_FRONTEND", "http://127.0.0.1:5174").rstrip("/")
 
 
-def _now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+def _external_api_base() -> str:
+    return os.getenv("BANK_CREDIT_EXTERNAL_API", "http://127.0.0.1:8080").rstrip("/")
 
 
-def _default_state() -> Dict[str, Any]:
-    case = _new_case(
-        applicant_name="上海青禾贸易有限公司",
-        amount=500000,
-        purpose="流动资金周转",
-        seed=True,
-    )
-    return {
-        "cases": [case],
-        "mock_external": {
-            case["id"]: {
-                "customer_no_exists": False,
-                "customer_no": None,
-                "financial_data_ready": False,
-            }
-        },
-    }
+def _url(path: str) -> str:
+    return f"{_external_api_base()}{path}"
 
 
-def _read_state() -> Dict[str, Any]:
-    if not STORE_PATH.exists():
-        state = _default_state()
-        _write_state(state)
-        return state
+def _frontend_url(path: str, params: Dict[str, Any]) -> str:
+    return f"{_external_frontend_base()}{path}?{urlencode(params)}"
+
+
+def _request(method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    body = None
+    headers = {"accept": "application/json"}
+    if payload is not None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["content-type"] = "application/json; charset=utf-8"
+    req = Request(_url(path), data=body, headers=headers, method=method)
     try:
-        return json.loads(STORE_PATH.read_text(encoding="utf-8"))
+        with NO_PROXY_OPENER.open(req, timeout=4) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"{method} {path} failed: HTTP {exc.code} {detail}") from exc
+
+
+def _read_session_links() -> Dict[str, Any]:
+    if not SESSION_LINKS_PATH.exists():
+        return {"sessions": {}, "cases": {}, "hidden": {}}
+    try:
+        data = json.loads(SESSION_LINKS_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            data.setdefault("sessions", {})
+            data.setdefault("cases", {})
+            data.setdefault("hidden", {})
+            return data
     except Exception:
-        state = _default_state()
-        _write_state(state)
-        return state
+        pass
+    return {"sessions": {}, "cases": {}, "hidden": {}}
 
 
-def _write_state(state: Dict[str, Any]) -> None:
-    STORE_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = STORE_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(STORE_PATH)
+def _write_session_links(data: Dict[str, Any]) -> None:
+    LINKS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = SESSION_LINKS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(SESSION_LINKS_PATH)
 
 
-def _new_case(
-    applicant_name: str,
-    amount: int,
-    purpose: str,
-    seed: bool = False,
-) -> Dict[str, Any]:
-    case_id = "loan-demo-001" if seed else f"loan-{uuid.uuid4().hex[:8]}"
-    ts = _now()
-    return {
-        "id": case_id,
-        "applicant_name": applicant_name,
-        "amount": amount,
-        "purpose": purpose,
-        "status": "pending",
-        "current_step": "open_customer_no",
-        "steps": copy.deepcopy(STEP_TEMPLATES),
-        "report_fields": {
-            "applicant_name": applicant_name,
-            "amount": amount,
-            "purpose": purpose,
-            "customer_no": None,
-            "financial_snapshot": None,
-        },
-        "events": [
-            {
-                "at": ts,
-                "kind": "case_created",
-                "message": "信贷业务流程已创建。",
-            }
-        ],
-        "created_at": ts,
-        "updated_at": ts,
-    }
+def associate_session_case(session_id: Optional[str], case_id: Optional[str]) -> None:
+    if not session_id or not case_id:
+        return
+    with SESSION_LINKS_LOCK:
+        data = _read_session_links()
+        sessions = data.setdefault("sessions", {})
+        cases = data.setdefault("cases", {})
+        session_cases = sessions.setdefault(str(session_id), [])
+        if case_id not in session_cases:
+            session_cases.append(case_id)
+        hidden_cases = data.setdefault("hidden", {}).setdefault(str(session_id), [])
+        data["hidden"][str(session_id)] = [item for item in hidden_cases if item != case_id]
+        case_sessions = cases.setdefault(str(case_id), [])
+        if session_id not in case_sessions:
+            case_sessions.append(session_id)
+        _write_session_links(data)
 
 
-def _find_case(state: Dict[str, Any], case_id: str) -> Dict[str, Any]:
-    for case in state.get("cases", []):
-        if case.get("id") == case_id:
-            return case
-    raise KeyError(case_id)
+def dissociate_session_case(session_id: Optional[str], case_id: Optional[str]) -> None:
+    if not session_id or not case_id:
+        return
+    with SESSION_LINKS_LOCK:
+        data = _read_session_links()
+        session_cases = data.setdefault("sessions", {}).get(str(session_id), [])
+        data["sessions"][str(session_id)] = [item for item in session_cases if item != case_id]
+        hidden_cases = data.setdefault("hidden", {}).setdefault(str(session_id), [])
+        if case_id not in hidden_cases:
+            hidden_cases.append(case_id)
+        case_sessions = data.setdefault("cases", {}).get(str(case_id), [])
+        data["cases"][str(case_id)] = [item for item in case_sessions if item != session_id]
+        _write_session_links(data)
 
 
-def _step(case: Dict[str, Any], step_id: str) -> Dict[str, Any]:
-    for step in case.get("steps", []):
-        if step.get("id") == step_id:
-            return step
-    raise KeyError(step_id)
+def session_case_ids(session_id: Optional[str]) -> List[str]:
+    if not session_id:
+        return []
+    with SESSION_LINKS_LOCK:
+        data = _read_session_links()
+        return list(data.get("sessions", {}).get(str(session_id), []))
 
 
-def _event(case: Dict[str, Any], kind: str, message: str) -> None:
-    case.setdefault("events", []).append({"at": _now(), "kind": kind, "message": message})
-    case["updated_at"] = _now()
+def hidden_session_case_ids(session_id: Optional[str]) -> List[str]:
+    if not session_id:
+        return []
+    with SESSION_LINKS_LOCK:
+        data = _read_session_links()
+        return list(data.get("hidden", {}).get(str(session_id), []))
 
 
-def _set_current_step(case: Dict[str, Any]) -> None:
-    for step in case.get("steps", []):
-        if step.get("status") in {"pending", "action_required", "in_progress"} and step.get("blocking", True):
-            case["current_step"] = step["id"]
-            case["status"] = "blocked" if step.get("status") == "action_required" else "pending"
-            return
-    case["current_step"] = None
-    case["status"] = "completed"
+def list_session_cases(session_id: Optional[str]) -> List[Dict[str, Any]]:
+    cases: List[Dict[str, Any]] = []
+    kept_ids: List[str] = []
+    for case_id in session_case_ids(session_id):
+        try:
+            case = get_case(case_id)
+        except KeyError:
+            continue
+        cases.append(case)
+        kept_ids.append(case_id)
+    if session_id and len(kept_ids) != len(session_case_ids(session_id)):
+        with SESSION_LINKS_LOCK:
+            data = _read_session_links()
+            data.setdefault("sessions", {})[str(session_id)] = kept_ids
+            _write_session_links(data)
+    return cases
 
 
-def _normalize_case(case: Dict[str, Any]) -> Dict[str, Any]:
-    done = sum(1 for s in case.get("steps", []) if s.get("status") in {"completed", "skipped"})
-    total = len(case.get("steps", [])) or 1
-    case["progress"] = round(done / total, 2)
-    return case
+def list_hidden_session_cases(session_id: Optional[str]) -> List[Dict[str, Any]]:
+    cases: List[Dict[str, Any]] = []
+    kept_ids: List[str] = []
+    for case_id in hidden_session_case_ids(session_id):
+        try:
+            case = get_case(case_id)
+        except KeyError:
+            continue
+        cases.append(case)
+        kept_ids.append(case_id)
+    if session_id and len(kept_ids) != len(hidden_session_case_ids(session_id)):
+        with SESSION_LINKS_LOCK:
+            data = _read_session_links()
+            data.setdefault("hidden", {})[str(session_id)] = kept_ids
+            _write_session_links(data)
+    return cases
 
 
-def list_cases() -> List[Dict[str, Any]]:
-    state = _read_state()
-    return [_normalize_case(copy.deepcopy(c)) for c in state.get("cases", [])]
-
-
-def get_case(case_id: str) -> Dict[str, Any]:
-    state = _read_state()
-    return _normalize_case(copy.deepcopy(_find_case(state, case_id)))
-
-
-def create_case(applicant_name: str, amount: int, purpose: str) -> Dict[str, Any]:
-    state = _read_state()
-    case = _new_case(applicant_name=applicant_name, amount=amount, purpose=purpose)
-    state.setdefault("cases", []).insert(0, case)
-    state.setdefault("mock_external", {})[case["id"]] = {
-        "customer_no_exists": False,
-        "customer_no": None,
-        "financial_data_ready": False,
-    }
-    _write_state(state)
+def _case_from_response(payload: Dict[str, Any], case_id: Optional[str] = None) -> Dict[str, Any]:
+    case = payload.get("case")
+    if not case:
+        raise KeyError(case_id or "")
     return _normalize_case(case)
 
 
+def _normalize_case(case: Dict[str, Any]) -> Dict[str, Any]:
+    for step in case.get("steps", []):
+        if str(step.get("external_url") or "").startswith("http"):
+            continue
+        step["external_url"] = _frontend_url_for_step(case, step)
+    return case
+
+
+def _frontend_url_for_step(case: Dict[str, Any], step: Dict[str, Any]) -> str:
+    params = {
+        "caseId": case.get("id") or "",
+        "customerName": case.get("applicant_name") or "",
+    }
+    step_id = step.get("id")
+    if step_id == "open_customer_no":
+        return _frontend_url("/customer/open", params)
+    if step_id == "fill_investigation_report":
+        return _frontend_url("/credit/report", params)
+    if step_id == "risk_admission_review":
+        params["task"] = "risk_admission"
+        return _frontend_url("/risk/admission", params)
+    if step_id == "sync_financial_data":
+        params["task"] = "financial_data"
+        return _frontend_url("/financials", params)
+    if step_id == "collateral_confirmation":
+        params["task"] = "collateral_confirmation"
+        return _frontend_url("/collateral/confirm", params)
+    if step_id == "save_report":
+        return _frontend_url("/credit/save", params)
+    return _frontend_url("/", params)
+
+
+def list_cases() -> List[Dict[str, Any]]:
+    payload = _request("GET", "/api/bank/credit-cases")
+    return [_normalize_case(item) for item in payload.get("cases", [])]
+
+
+def get_case(case_id: str) -> Dict[str, Any]:
+    payload = _request("GET", f"/api/bank/credit-cases/{case_id}")
+    return _case_from_response(payload, case_id)
+
+
+def create_case(applicant_name: str, amount: int, purpose: str) -> Dict[str, Any]:
+    payload = _request("POST", "/api/bank/credit-cases", {
+        "applicant_name": applicant_name,
+        "amount": amount,
+        "purpose": purpose,
+    })
+    return _case_from_response(payload)
+
+
+def delete_case(case_id: str) -> Dict[str, Any]:
+    payload = _request("DELETE", f"/api/bank/credit-cases/{case_id}")
+    if not payload.get("deleted"):
+        raise KeyError(case_id)
+    return {"deleted": True, "case_id": payload.get("case_id") or case_id}
+
+
 def advance_case(case_id: str, report_fields: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    state = _read_state()
-    case = _find_case(state, case_id)
-    ext = state.setdefault("mock_external", {}).setdefault(case_id, {})
-
-    if report_fields:
-        for key in ("applicant_name", "amount", "purpose"):
-            value = report_fields.get(key)
-            if value not in (None, ""):
-                case["report_fields"][key] = value
-                if key in case:
-                    case[key] = value
-
-    customer_step = _step(case, "open_customer_no")
-    if customer_step["status"] != "completed":
-        if ext.get("customer_no_exists"):
-            customer_step["status"] = "completed"
-            case["report_fields"]["customer_no"] = ext.get("customer_no") or f"CUST-{case_id[-6:].upper()}"
-            _event(case, "external_check_passed", "已查询到客户号，流程继续。")
-        else:
-            was_waiting = customer_step.get("status") == "action_required"
-            customer_step["status"] = "action_required"
-            customer_step["last_checked_at"] = _now()
-            if not was_waiting:
-                _event(case, "external_blocked", "等待客户经理在外部系统开立客户号。")
-            _set_current_step(case)
-            _write_state(state)
-            return _normalize_case(copy.deepcopy(case))
-
-    report_step = _step(case, "fill_investigation_report")
-    required = ["applicant_name", "amount", "purpose", "customer_no"]
-    missing = [k for k in required if not case.get("report_fields", {}).get(k)]
-    if missing:
-        report_step["status"] = "action_required"
-        report_step["missing_fields"] = missing
-        _event(case, "input_required", "调查报告基础字段未齐备。")
-        _set_current_step(case)
-        _write_state(state)
-        return _normalize_case(copy.deepcopy(case))
-    if report_step["status"] != "completed":
-        report_step["status"] = "completed"
-        report_step.pop("missing_fields", None)
-        _event(case, "internal_api_completed", "调查报告基础要素已保存。")
-
-    finance_step = _step(case, "sync_financial_data")
-    if finance_step["status"] not in {"completed", "skipped"}:
-        if ext.get("financial_data_ready"):
-            finance_step["status"] = "completed"
-            case["report_fields"]["financial_snapshot"] = {
-                "revenue": 1280000,
-                "net_profit": 96000,
-                "debt_ratio": 0.42,
-            }
-            _event(case, "optional_external_completed", "财报数据已同步。")
-        else:
-            finance_step["status"] = "skipped"
-            finance_step["last_checked_at"] = _now()
-            _event(case, "optional_external_skipped", "财报数据未就绪，按非阻塞步骤跳过。")
-
-    save_step = _step(case, "save_report")
-    if save_step["status"] != "completed":
-        save_step["status"] = "completed"
-        _event(case, "internal_api_completed", "调查报告草稿已保存。")
-
-    _set_current_step(case)
-    _write_state(state)
-    return _normalize_case(copy.deepcopy(case))
+    payload = _request("POST", f"/api/bank/credit-cases/{case_id}/advance", {
+        "report_fields": report_fields or {},
+    })
+    return _case_from_response(payload, case_id)
 
 
 def mark_customer_created(case_id: str, customer_no: Optional[str] = None) -> Dict[str, Any]:
-    state = _read_state()
-    _find_case(state, case_id)
-    ext = state.setdefault("mock_external", {}).setdefault(case_id, {})
-    ext["customer_no_exists"] = True
-    ext["customer_no"] = customer_no or f"CUST-{case_id[-6:].upper()}"
-    _write_state(state)
+    params = urlencode({"caseId": case_id, "customerName": "", "customerNo": customer_no or ""})
+    _request("POST", f"/api/bank/customer-number/open?{params}")
     return advance_case(case_id)
 
 
 def mark_financial_ready(case_id: str) -> Dict[str, Any]:
-    state = _read_state()
-    _find_case(state, case_id)
-    ext = state.setdefault("mock_external", {}).setdefault(case_id, {})
-    ext["financial_data_ready"] = True
-    _write_state(state)
+    params = urlencode({"caseId": case_id, "customerName": "", "task": "financial_data"})
+    _request("POST", f"/api/bank/external-task/complete?{params}")
+    return advance_case(case_id)
+
+
+def mark_external_task_done(case_id: str, task: str) -> Dict[str, Any]:
+    params = urlencode({"caseId": case_id, "customerName": "", "task": task})
+    _request("POST", f"/api/bank/external-task/complete?{params}")
     return advance_case(case_id)
 
 
 def poll_cases() -> Dict[str, Any]:
-    """Advance all non-completed cases until blocked or complete.
-
-    This is the operation a Hermes cron job should call. In the MVP the
-    external system flags are mock state; in production this function should
-    query real bank systems before calling ``advance_case``.
-    """
-    state = _read_state()
-    case_ids = [
-        str(case.get("id"))
-        for case in state.get("cases", [])
-        if case.get("id") and case.get("status") != "completed"
-    ]
-    results: List[Dict[str, Any]] = []
-    for case_id in case_ids:
-        before = get_case(case_id)
-        after = advance_case(case_id)
-        results.append({
-            "case_id": case_id,
-            "before_status": before.get("status"),
-            "after_status": after.get("status"),
-            "before_step": before.get("current_step"),
-            "after_step": after.get("current_step"),
-            "changed": before.get("status") != after.get("status")
-            or before.get("current_step") != after.get("current_step")
-            or before.get("progress") != after.get("progress"),
-        })
-    return {
-        "checked": len(case_ids),
-        "changed": sum(1 for item in results if item["changed"]),
-        "results": results,
-    }
+    payload = _request("POST", "/api/bank/credit-cases/poll")
+    return payload.get("poll", payload)
 
 
 def reset_demo() -> Dict[str, Any]:
-    state = _default_state()
-    _write_state(state)
-    return _normalize_case(copy.deepcopy(state["cases"][0]))
+    payload = _request("POST", "/api/bank/credit-cases/reset-demo")
+    return _case_from_response(payload, "loan-demo-001")

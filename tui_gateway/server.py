@@ -1386,6 +1386,10 @@ def _session_info(agent) -> dict:
         "usage": _get_usage(agent),
     }
     try:
+        info["agent_session_id"] = getattr(agent, "session_id", "") or ""
+    except Exception:
+        info["agent_session_id"] = ""
+    try:
         from hermes_cli import __version__, __release_date__
 
         info["version"] = __version__
@@ -1522,6 +1526,16 @@ def _on_tool_complete(sid: str, tool_call_id: str, name: str, args: dict, result
     summary = _tool_summary(name, result, duration_s)
     if summary:
         payload["summary"] = summary
+    if name.startswith("bank_credit_"):
+        try:
+            data = json.loads(result)
+            case = data.get("case") if isinstance(data, dict) else None
+            if isinstance(case, dict) and case.get("id"):
+                payload["case_id"] = str(case.get("id"))
+            elif isinstance(data, dict) and data.get("case_id"):
+                payload["case_id"] = str(data.get("case_id"))
+        except Exception:
+            pass
     if name == "todo":
         try:
             data = json.loads(result)

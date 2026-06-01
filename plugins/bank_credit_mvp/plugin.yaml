@@ -1,0 +1,12 @@
+name: bank-credit-mvp
+version: 0.1.0
+description: "MVP credit workflow tools for bank loan cases."
+author: Local demo
+kind: standalone
+provides_tools:
+  - bank_credit_list_cases
+  - bank_credit_create_case
+  - bank_credit_get_case
+  - bank_credit_advance_case
+  - bank_credit_delete_case
+  - bank_credit_poll_cases

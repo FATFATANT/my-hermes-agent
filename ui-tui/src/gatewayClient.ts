@@ -323,12 +323,17 @@ export class GatewayClient extends EventEmitter {
 
     env.PYTHONPATH = pyPath ? `${root}${delimiter}${pyPath}` : root
     this.startReadyTimer(python, cwd)
+    this.connectSidecarMirror()
     this.proc = spawn(python, ['-m', 'tui_gateway.entry'], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
 
     this.stdoutRl = createInterface({ input: this.proc.stdout! })
     this.stdoutRl.on('line', raw => {
       try {
-        this.dispatch(JSON.parse(raw))
+        const frame = JSON.parse(raw)
+        if (frame.method === 'event') {
+          this.mirrorEventToSidecar(raw)
+        }
+        this.dispatch(frame)
       } catch {
         const preview = raw.trim().slice(0, MAX_LOG_PREVIEW) || '(empty line)'
 

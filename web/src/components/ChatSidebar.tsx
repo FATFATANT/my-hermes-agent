@@ -32,10 +32,12 @@ import { ToolCall, type ToolEntry } from "@/components/ToolCall";
 import { GatewayClient, type ConnectionState } from "@/lib/gatewayClient";
 
 import { cn } from "@/lib/utils";
+import { PluginSlot } from "@/plugins";
 import { AlertCircle, ChevronDown, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface SessionInfo {
+  agent_session_id?: string;
   cwd?: string;
   model?: string;
   provider?: string;
@@ -67,6 +69,11 @@ const STATE_TONE: Record<
   closed: "secondary",
   error: "destructive",
 };
+
+function isBankCreditToolName(name: string | undefined): boolean {
+  const normalized = (name ?? "").toLowerCase().replace(/[\s-]+/g, "_");
+  return normalized.startsWith("bank_credit_") || normalized.includes("bank_credit");
+}
 
 interface ChatSidebarProps {
   channel: string;
@@ -195,6 +202,19 @@ export function ChatSidebar({ channel, className }: ChatSidebarProps) {
 
       const { type, payload } = frame.params;
 
+      if (type === "session.info") {
+        const p = payload as SessionInfo | undefined;
+        if (p?.agent_session_id) {
+          window.__HERMES_CHAT_SESSION_ID__ = p.agent_session_id;
+          window.dispatchEvent(
+            new CustomEvent("bank-credit-chat-session", {
+              detail: { sessionId: p.agent_session_id },
+            }),
+          );
+        }
+        return;
+      }
+
       if (type === "tool.start") {
         const p = payload as
           | { tool_id?: string; name?: string; context?: string }
@@ -203,6 +223,14 @@ export function ChatSidebar({ channel, className }: ChatSidebarProps) {
 
         if (!toolId) {
           return;
+        }
+
+        if (isBankCreditToolName(p?.name)) {
+          window.dispatchEvent(
+            new CustomEvent("bank-credit-chat-tool", {
+              detail: { name: p?.name, phase: "start" },
+            }),
+          );
         }
 
         setTools((prev) =>
@@ -239,14 +267,31 @@ export function ChatSidebar({ channel, className }: ChatSidebarProps) {
         const p = payload as
           | {
               tool_id?: string;
+              name?: string;
               summary?: string;
               error?: string;
               inline_diff?: string;
+              case_id?: string;
             }
           | undefined;
 
         if (!p?.tool_id) {
           return;
+        }
+
+        const completedTool = tools.find((t) => t.tool_id === p.tool_id);
+        const toolName = p.name ?? completedTool?.name ?? "";
+        if (isBankCreditToolName(toolName)) {
+          window.dispatchEvent(
+            new CustomEvent("bank-credit-chat-tool", {
+              detail: {
+                caseId: p.case_id,
+                name: toolName,
+                phase: "complete",
+                sessionId: frame.params.session_id,
+              },
+            }),
+          );
         }
 
         setTools((prev) =>
@@ -355,6 +400,8 @@ export function ChatSidebar({ channel, className }: ChatSidebarProps) {
         </Card>
       )}
 
+      <PluginSlot name="chat:sidebar" />
+
       <Card className="flex min-h-0 flex-none flex-col px-2 py-2">
         <div className="px-1 pb-2 text-xs uppercase tracking-wider text-muted-foreground">
           tools
@@ -381,4 +428,10 @@ export function ChatSidebar({ channel, className }: ChatSidebarProps) {
       )}
     </aside>
   );
+}
+
+declare global {
+  interface Window {
+    __HERMES_CHAT_SESSION_ID__?: string;
+  }
 }

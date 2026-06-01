@@ -1,0 +1,9 @@
+name: yunxiaodai
+version: 0.1.0
+description: "Yunxiaodai order intake tools for amount estimation, company submission, and final application."
+author: Your Name, Hermes Agent
+kind: backend
+provides_tools:
+  - yunxiaodai_query_amount
+  - yunxiaodai_submit_company
+  - yunxiaodai_apply_info
